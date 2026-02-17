@@ -6,7 +6,6 @@ const cors = require("cors");
 const dbConnect = require("./config/dbConnect");
 const authRouter = require("./routes/authroutes");
 const ubaRoutes = require("./routes/ubaRoutes");
-const adminRoutes = require("./routes/adminRoutes");
 const mlHealthCheck = require("./utils/mlHealthCheck");
 
 const app = express();
@@ -55,7 +54,6 @@ app.get("/health", (_, res) => {
 /* ---------- ROUTES ---------- */
 app.use("/api/v1", authRouter);   // 🔑 AuthContext uses this
 app.use("/api/uba", ubaRoutes);
-app.use("/api/admin", adminRoutes);
 
 /* ---------- SERVER START ---------- */
 if (require.main === module) {
