@@ -21,6 +21,7 @@ const userSchema = new mongoose.Schema(
       required: [true, "Email is Required"],
       trim: true,
       unique: true,
+      lowercase: true,
     },
     password: {
       type: String,
@@ -32,8 +33,53 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    role: {
+      type: String,
+      enum: ["user"],
+      default: "user",
+      lowercase: true,
+    },
+    riskScore: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
+
+    // 🔥 UBA BASELINE TRACKING (NEW - DOES NOT BREAK EXISTING LOGIC)
+    // These arrays will be incredibly useful for your UBA anomaly detection later.
+    // You can compare future logins against these to detect stolen credentials.
+    trustedLocations: {
+      type: [String],
+      default: [], // e.g., ["Mumbai, Maharashtra", "Pune, Maharashtra"]
+    },
+    trustedDevices: {
+      type: [String],
+      default: [], // e.g., ["Windows Chrome", "Android Chrome"]
+    },
+    phone: { 
+      type: String, 
+      default: "" 
+    },
+    location: { 
+      type: String, 
+      default: "unknown" 
+    },
+    avatar: { 
+      type: String, 
+      default: ""
+    },
+    bio: { 
+      type: String, 
+      default: "" 
+    },
+    joinDate: { 
+      type: Date, 
+      default: Date.now,
+      immutable: true 
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("User", userSchema);

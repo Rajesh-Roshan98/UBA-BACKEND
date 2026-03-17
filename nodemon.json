@@ -1,0 +1,22 @@
+{
+  "verbose": true,
+
+  "watch": [
+    "routes",
+    "controllers",
+    "models",
+    "server.js"
+  ],
+
+  "ignore": [
+    "ml/**",
+    "*.csv",
+    "*.pkl",
+    "*.json",
+    "*.db",
+    "*.db-wal",
+    "node_modules/**"
+  ],
+
+  "ext": "js,mjs,cjs"
+}
