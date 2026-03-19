@@ -4,6 +4,7 @@ const path = require("path");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const UAParser = require("ua-parser-js");
+const cookieParser = require('cookie-parser');
 
 const dbConnect = require("./config/dbConnect");
 const authRouter = require("./routes/authRoutes");
@@ -26,6 +27,7 @@ app.use(
 
 /* ---------- BODY PARSER ---------- */
 app.use(express.json());
+app.use(cookieParser());
 
 app.use((req, res, next) => {
   const parser = new UAParser(req.headers["user-agent"]);

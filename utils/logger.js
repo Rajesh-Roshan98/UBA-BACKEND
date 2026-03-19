@@ -51,7 +51,8 @@ const getDeviceInfo = async (req) => {
       fetchIp = ''; 
     }
     
-    const geoRes = await axios.get(`http://ip-api.com/json/${fetchIp}`);
+    // 🔥 FIX: Added a strict 300ms timeout to prevent this free API from slowing down logins!
+    const geoRes = await axios.get(`http://ip-api.com/json/${fetchIp}`, { timeout: 300 });
     
     if (geoRes.data && geoRes.data.status === 'success') {
       const city = geoRes.data.city || "Unknown City";
@@ -59,7 +60,11 @@ const getDeviceInfo = async (req) => {
       locationString = `${city}, ${state}`;
     }
   } catch (geoError) {
-    console.error("GeoIP Fetch Error:", geoError.message);
+    // We intentionally ignore timeout errors here so the user can still log in instantly
+    // even if the location couldn't be fetched in time.
+    if (geoError.code !== 'ECONNABORTED') {
+       console.error("GeoIP Fetch Error:", geoError.message);
+    }
   }
 
   return { deviceName, locationString };

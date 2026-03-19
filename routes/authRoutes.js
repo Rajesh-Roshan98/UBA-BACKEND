@@ -12,7 +12,8 @@ const {
   changePassword,
   getMyNotifications,
   markAsRead,
-  markAllAsRead
+  markAllAsRead,
+  submitContactForm
 } = require("../controllers/authController");
 
 const { getProfile, updateProfile, uploadAvatar } = require("../controllers/profileController");
@@ -45,6 +46,7 @@ router.post('/notifications/read-all', auth, markAllAsRead);
 router.post("/sendotp", sendOtp);
 router.post("/verifyotp", verifyOtp);
 router.put("/change-password", auth, changePassword);
+router.post('/contact', submitContactForm);
 
 // Authentication routes (public)
 router.post("/signup", signUp);
