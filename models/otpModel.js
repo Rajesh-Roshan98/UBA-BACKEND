@@ -9,7 +9,7 @@ const otpSchema = new mongoose.Schema(
     },
     otp: {
       type: Number, // numeric OTP
-      required: true,
+      required: true, 
     },
     createdAt: {
       type: Date,

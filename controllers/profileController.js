@@ -10,7 +10,7 @@ exports.getProfile = async (req, res) => {
     // ==========================================
     // 🔥 NEW: INJECTED ADMIN GET PROFILE LOGIC
     // ==========================================
-    if (req.user && req.user.role === "admin") {
+    if (req.user && req.user.role === "admin") { 
       let admin = await Admin.findById(req.user.userId).select("-password").lean();
       
       if (!admin) {

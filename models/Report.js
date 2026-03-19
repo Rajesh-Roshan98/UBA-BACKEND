@@ -8,7 +8,7 @@ const reportSchema = new mongoose.Schema(
       required: true
     },
     name: {
-      type: String,
+      type: String, 
       required: true // e.g., 'Monthly User Activity Report - Jan'
     },
     fileSize: {

@@ -10,7 +10,7 @@ const BATCH_SIZE = 1000;
 
 // 🔒 Fixed created date for new entries
 const FIXED_CREATED_AT = new Date("2025-12-25T00:00:00.000Z");
-
+ 
 // ✅ Database-managed keys that should NEVER be wiped by the auto-cleanup
 const IGNORED_KEYS = ['_id', '__v', 'createdAt', 'updatedAt', 'status'];
 

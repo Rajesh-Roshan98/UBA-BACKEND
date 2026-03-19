@@ -6,7 +6,7 @@ const Session = require("../models/sessionModel"); // 🔥 NEW: Import the Sessi
 const Admin = require("../models/adminModel");
 const AdminSession = require("../models/adminSession");
 
-exports.auth = async (req, res, next) => {
+exports.auth = async (req, res, next) => { 
   try {
     const authHeader = req.headers.authorization;
 

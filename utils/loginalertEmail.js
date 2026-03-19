@@ -12,7 +12,7 @@ const failedLoginEmail = (alertId) => {
       body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
         background-color: #f3f4f6;
-        margin: 0;
+        margin: 0; 
         padding: 40px 20px;
         color: #1f2937;
       }

@@ -8,7 +8,7 @@ const adminLogSchema = new mongoose.Schema(
       required: true,
     },
     email: {
-      type: String,
+      type: String, 
       required: true, // Stores the user's email for quick access without population
     },
     action: {

@@ -5,7 +5,7 @@ const adminSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "Admin",
     required: true,
-  },
+  }, 
   email: {
     type: String,
     required: true, // Stores the user's email for quick access without population

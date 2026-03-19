@@ -18,7 +18,7 @@ const adminSchema = new mongoose.Schema(
       trim: true,
     },
     email: {
-      type: String,
+      type: String, 
       required: [true, "Email is Required"],
       trim: true,
       unique: true,

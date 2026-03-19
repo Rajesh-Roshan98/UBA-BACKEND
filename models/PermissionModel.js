@@ -10,7 +10,7 @@ const permissionSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  accessType: {
+  accessType: { 
     type: String,
     enum: ["Read Only", "Read/Write", "Admin"],
     default: "Read Only",

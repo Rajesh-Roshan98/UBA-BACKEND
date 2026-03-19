@@ -10,7 +10,7 @@ exports.getSystemLogs = async (req, res) => {
     // Filter Logic
     if (level && level !== 'all') query.level = level;
     if (component && component !== 'all') query.component = component;
-    
+     
     // Populate user to search by email
     let logs = await ActivityLog.find(query)
         .populate("user_id", "email")

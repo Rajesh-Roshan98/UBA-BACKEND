@@ -12,7 +12,7 @@ const roleMiddleware = require("../middleware/roleMiddleware");
 // This ensures the user is logged in (auth) AND has the admin role (roleMiddleware)
 router.use(auth);
 router.use(roleMiddleware("admin"));
-
+ 
 // ================= UBA LOG ROUTES =================
 router.post("/log", createLog);
 router.get("/logs", getLogs); // Gets ALL raw logs

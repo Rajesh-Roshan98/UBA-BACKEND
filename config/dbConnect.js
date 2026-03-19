@@ -12,7 +12,7 @@ const connectWithRetry = async (retries = 5, delay = 3000) => {
       await mongoose.connect(DB_URL, {
         serverSelectionTimeoutMS: 5000, // Fail early if it can't connect (5s instead of 30s)
         socketTimeoutMS: 45000,         // Close idle sockets after 45 seconds
-        maxIdleTimeMS: 10000,
+        maxIdleTimeMS: 10000, 
       });
       console.log("✅ DB Connected Successfully");
       return;

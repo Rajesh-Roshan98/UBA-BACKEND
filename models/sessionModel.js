@@ -11,7 +11,7 @@ const sessionSchema = new mongoose.Schema({
     required: true, // Stores the user's email for quick access without population
   },
   ipAddress: String,
-  deviceInfo: String,
+  deviceInfo: String, 
   token: { 
     type: String, 
     required: true 

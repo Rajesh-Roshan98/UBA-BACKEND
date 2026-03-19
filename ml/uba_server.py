@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 import time  
 import asyncio 
-import gc  # Added for memory optimization
+import gc  # Added for memory optimization 
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path

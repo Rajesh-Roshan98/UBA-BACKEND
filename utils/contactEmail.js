@@ -12,7 +12,7 @@ const ContactEmail = (name, email, message) => `
       color: #334155;
       margin: 0;
       padding: 40px 20px;
-    }
+    } 
     .container {
       max-width: 500px;
       margin: 0 auto;

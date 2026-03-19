@@ -11,7 +11,7 @@ const userLogSchema = new mongoose.Schema(
       type: String,
       required: true, // Stores the user's email for quick access without population
     },
-    action: {
+    action: { 
       type: String,
       required: true, // e.g., 'login', 'data_export', 'database_query'
     },

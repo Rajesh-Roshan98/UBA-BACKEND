@@ -7,7 +7,7 @@ const fs = require('fs');
 ========================================================= */
 
 // Ensure the avatar upload directory exists
-const avatarUploadDir = 'uploads/avatars';
+const avatarUploadDir = 'uploads/avatars'; 
 if (!fs.existsSync(avatarUploadDir)) {
   fs.mkdirSync(avatarUploadDir, { recursive: true });
 }

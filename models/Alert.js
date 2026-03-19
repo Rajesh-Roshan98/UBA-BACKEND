@@ -20,7 +20,7 @@ const alertSchema = new mongoose.Schema(
       enum: ['low', 'medium', 'high', 'critical'],
       required: true
     },
-    status: {
+    status: { 
       type: String,
       enum: ['active', 'resolved', 'ignored'],
       default: 'active'

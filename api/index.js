@@ -8,7 +8,7 @@ module.exports = async (req, res) => {
   if (!isConnected) {
     try {
       await dbConnect();
-      isConnected = true;
+      isConnected = true; 
       console.log("✅ MongoDB connected via Vercel Function");
     } catch (error) {
       console.error("❌ DB Connection Error:", error);

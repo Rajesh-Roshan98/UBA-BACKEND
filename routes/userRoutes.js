@@ -8,8 +8,8 @@ const {
   resolveAlert, 
   getReports, 
   getUserLog,
-  getFailedAttempts,
-  getPublicAlertDetails,
+  getFailedAttempts, 
+  getPublicAlertDetails, 
   acknowledgePublicAlert,
   securePublicAccount // Updated to match your combined controller's function name
 } = require('../controllers/userController');

@@ -112,7 +112,7 @@ def run_detection():
         else:
             model_key = role
 
-        # Load model if not already loaded
+        # Load model if not already loaded 
         if model_key not in loaded_models:
             model_path = role_models[model_key]
             if not os.path.exists(model_path):

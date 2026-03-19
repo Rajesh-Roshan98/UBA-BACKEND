@@ -11,7 +11,7 @@ const generateAuthEmail = (type, otp = null) => {
       <p style="margin: 0 0 24px; font-size: 16px; color: #475569; line-height: 1.6;">
         We received a request to reset the password for your account. Please use the verification code below to complete the process:
       </p>
-      
+       
       <div style="text-align: center; margin: 32px 0; padding: 24px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);">
         <p style="font-family: 'Courier New', Courier, monospace; font-size: 38px; font-weight: 700; color: #4f46e5; letter-spacing: 12px; margin: 0; padding-left: 12px;">${otp}</p>
       </div>

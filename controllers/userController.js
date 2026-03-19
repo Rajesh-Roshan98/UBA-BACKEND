@@ -8,7 +8,7 @@ const Session = require("../models/sessionModel");
 
 exports.getDashboardOverview = async (req, res) => {
   try {
-    const userId = req.user.userId;
+    const userId = req.user.userId; 
 
     // 1. Fetch user from MongoDB & get real-time UBA risk score
     const user = await User.findById(userId).select("riskScore name");

@@ -10,7 +10,7 @@ const Admin = require("../models/adminModel");
 // 🔧 Load environment variables from the parent backend folder
 require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
-const createAdmins = async () => {
+const createAdmins = async () => { 
   try {
     // 1. Connect to the database
     if (!process.env.DB_URL) {

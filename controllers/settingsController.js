@@ -10,7 +10,7 @@ const validator = require("validator");
 const { logActivity } = require("../utils/logger");
 
 // @desc    Get user settings
-// @route   GET /api/settings
+// @route   GET /api/settings 
 // @access  Private
 exports.getUserSettings = async (req, res) => {
   try {

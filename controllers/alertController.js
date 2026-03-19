@@ -7,7 +7,7 @@ exports.getAlerts = async (req, res) => {
     
     // ✅ FIXED: Updated to support the new numeric prediction and string prediction_label
     let query = { 
-        $or: [
+        $or: [ 
             { prediction_label: { $in: ["Anomaly", "anomaly", "Malicious"] } },
             { prediction: -1 },
             { prediction_raw: -1 }

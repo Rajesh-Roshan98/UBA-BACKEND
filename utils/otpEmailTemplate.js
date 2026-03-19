@@ -13,7 +13,7 @@ const generateOtpEmail = (otpValue) => {
     
     <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:#0f172a; padding: 20px;">
       <tr>
-        <td align="center">
+        <td align="center"> 
           
           <table width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width:450px; background-color:#1e293b; border-radius:16px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); overflow:hidden; border: 1px solid #334155;">
             

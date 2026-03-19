@@ -8,7 +8,7 @@ const axios = require("axios");
  */
 const getDeviceInfo = async (req) => {
   if (!req) return { deviceName: "Unknown", locationString: "Unknown" };
-
+ 
   const userAgent = req.headers["user-agent"] || "";
   const parser = new UAParser(userAgent);
   const result = parser.getResult();

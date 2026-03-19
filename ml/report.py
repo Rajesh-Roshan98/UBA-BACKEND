@@ -9,7 +9,7 @@ TOP_N = 5  # Number of suspicious users to investigate
 
 # ----------------------------
 # Load Data
-# ----------------------------
+# ---------------------------- 
 if not os.path.exists(PREDICTED_FILE):
     raise FileNotFoundError(f"❌ {PREDICTED_FILE} not found. Run detection.py first.")
 

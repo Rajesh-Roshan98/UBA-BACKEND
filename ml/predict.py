@@ -9,7 +9,7 @@ import traceback
 warnings.filterwarnings('ignore')
 
 # ==============================
-# 1️⃣ CONFIG & PATHS
+# 1️⃣ CONFIG & PATHS 
 # ==============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 

@@ -6,7 +6,7 @@ const Permission = require("../models/PermissionModel");
 
 /* ================= DASHBOARD STATS ================= */
 exports.getDashboardStats = async (req, res) => {
-  try {
+  try { 
     // 1. Total Users (DB)
     const distinctUsers = await ActivityLog.distinct("user_id");
     const totalUsers = distinctUsers.length;

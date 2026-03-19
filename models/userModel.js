@@ -26,7 +26,7 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      select: false,
+      select: false, 
     },
 
     // ✅ THIS FIELD WAS MISSING (CRITICAL)

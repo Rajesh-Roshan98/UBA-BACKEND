@@ -7,7 +7,7 @@ const roleMiddleware = (...allowedRoles) => {
     // 1. Ensure the user object exists (this should be set prior by authMiddleware)
     if (!req.user || !req.user.role) {
       return res.status(401).json({
-        success: false,
+        success: false, 
         message: "Unauthorized: User information is missing.",
       });
     }

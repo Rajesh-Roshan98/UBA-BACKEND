@@ -11,7 +11,7 @@ const roleMiddleware = require("../middleware/roleMiddleware");
 // This ensures the user is logged in (auth) AND has the admin role (roleMiddleware)
 router.use(auth);
 router.use(roleMiddleware("admin"));
-
+ 
 /* ================= DASHBOARD & STATS ================= */
 // Route: GET /api/admin/stats
 // Description: Returns aggregate stats for the dashboard (Users, Alerts, etc.)

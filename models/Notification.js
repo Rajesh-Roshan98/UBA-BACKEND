@@ -10,7 +10,7 @@ const notificationSchema = new mongoose.Schema({
     type: String,
     enum: ['new_login', 'email_verification', 'system'],
     required: true,
-  },
+  }, 
   title: String,
   message: String,
   data: {

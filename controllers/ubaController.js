@@ -11,7 +11,7 @@ exports.createLog = async (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    // Fetch existing logs for this user
+    // Fetch existing logs for this user 
     const userLogs = await ActivityLog.find({ user_id });
 
     // ---------- FEATURE CALCULATIONS ----------

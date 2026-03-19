@@ -13,7 +13,7 @@ const mlHealthCheck = () => {
         console.error("❌ ML Health Check Failed");
         console.error(stderr || error.message);
         return reject(error);
-      }
+      } 
 
       const output = stdout.trim();
 

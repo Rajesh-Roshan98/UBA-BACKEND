@@ -759,7 +759,7 @@ exports.changePassword = async (req, res) => {
     const isSame = await bcrypt.compare(newPassword, account.password);
     if (isSame) {
       return res.status(400).json({ message: "New password must be different from current password" });
-    }
+    } 
 
     // ================= Backend password strength validation =================
     const strongPasswordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&]).{8,}$/;
