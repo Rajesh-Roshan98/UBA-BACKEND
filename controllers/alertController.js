@@ -22,9 +22,11 @@ exports.getAlerts = async (req, res) => {
       query.status = status;
     }
 
+    // ✅ OPTIMIZED: Added .lean() 
     const logs = await ActivityLog.find(query)
       .populate("user_id", "email firstName lastName")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     // Map to frontend structure
     const alerts = logs.map(log => ({
@@ -61,7 +63,8 @@ exports.updateAlertStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body; 
 
-    const log = await ActivityLog.findByIdAndUpdate(id, { status }, { new: true });
+    // ✅ OPTIMIZED: Added .lean() 
+    const log = await ActivityLog.findByIdAndUpdate(id, { status }, { new: true }).lean();
     
     if (!log) return res.status(404).json({ success: false, message: "Alert not found" });
 
@@ -75,6 +78,7 @@ exports.updateAlertStatus = async (req, res) => {
 exports.getAnomalies = async (req, res) => {
   try {
     // ✅ FIXED: Updated to support the new numeric prediction and string prediction_label
+    // ✅ OPTIMIZED: Added .lean() 
     const anomalies = await ActivityLog.find({ 
         $or: [
             { prediction_label: { $in: ["Anomaly", "anomaly", "Malicious"] } },
@@ -82,7 +86,7 @@ exports.getAnomalies = async (req, res) => {
             { prediction_raw: -1 }
         ],
         status: { $in: ["pending", "investigating", null, "open"] } 
-    }).populate("user_id", "email");
+    }).populate("user_id", "email").lean();
 
     // 🔹 UPDATED: Strictly mapping only the fields you requested for the Anomaly Review page
     const formatted = anomalies.map(a => ({

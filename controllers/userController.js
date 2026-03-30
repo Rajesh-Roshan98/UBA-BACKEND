@@ -11,7 +11,8 @@ exports.getDashboardOverview = async (req, res) => {
     const userId = req.user.userId; 
 
     // 1. Fetch user from MongoDB & get real-time UBA risk score
-    const user = await User.findById(userId).select("riskScore name");
+    // ✅ OPTIMIZED: Added .lean()
+    const user = await User.findById(userId).select("riskScore name").lean();
 
     if (!user) {
       return res.status(404).json({ message: "User not found in database." });
@@ -43,17 +44,19 @@ exports.getDashboardOverview = async (req, res) => {
       Session.countDocuments({ user: userId }),
 
       // 🔥 NEW: Fetch the most recent successful login log to get the location
-      UserLog.findOne({ user: userId, action: "login", status: "success" }).sort({ createdAt: -1 })
+      // ✅ OPTIMIZED: Added .lean()
+      UserLog.findOne({ user: userId, action: "login", status: "success" }).sort({ createdAt: -1 }).lean()
     ]);
 
     // Calculate active sessions directly from the Session database count.
     const activeSessions = Math.max(1, activeSessionsCount);
 
     // Fetch the device info from the specific Active Session rather than history
+    // ✅ OPTIMIZED: Added .lean()
     const currentSession = await Session.findOne({ 
       user: userId,
       token: req.token 
-    });
+    }).lean();
 
     let deviceName = "Unknown Device";
     if (currentSession && currentSession.deviceInfo) {
@@ -93,9 +96,10 @@ exports.getDashboardOverview = async (req, res) => {
 
 exports.getAlerts = async (req, res) => {
   try {
+    // ✅ OPTIMIZED: Added .lean()
     const alerts = await Alert.find({ user: req.user.userId }).sort({
       createdAt: -1,
-    });
+    }).lean();
 
     const formattedAlerts = alerts.map((alert) => ({
       id: alert._id,
@@ -148,7 +152,8 @@ exports.getFailedAttempts = async (req, res) => {
 
     // If an ID is provided, fetch that specific log (used by the CheckActivity page)
     if (id) {
-      const log = await UserLog.findOne({ _id: id, user: userId });
+      // ✅ OPTIMIZED: Added .lean()
+      const log = await UserLog.findOne({ _id: id, user: userId }).lean();
       if (!log) return res.status(404).json({ success: false, message: "Log not found" });
 
       // Return data in the shape the React frontend expects
@@ -163,10 +168,11 @@ exports.getFailedAttempts = async (req, res) => {
     }
 
     // Otherwise, return the list of all failed logs for this user
+    // ✅ OPTIMIZED: Added .lean()
     const failedLogs = await UserLog.find({ 
       user: userId, 
       status: 'failed' 
-    }).sort({ createdAt: -1 });
+    }).sort({ createdAt: -1 }).lean();
 
     res.status(200).json({
       success: true,
@@ -183,9 +189,10 @@ exports.getFailedAttempts = async (req, res) => {
 
 exports.getReports = async (req, res) => {
   try {
+    // ✅ OPTIMIZED: Added .lean()
     const reports = await Report.find({ user: req.user.userId }).sort({
       createdAt: -1,
-    });
+    }).lean();
 
     const formattedReports = reports.map((report) => ({
       id: report._id,
@@ -208,6 +215,8 @@ exports.getReports = async (req, res) => {
 exports.getUserLog = async (req, res) => {
   try {
     const userId = req.user.userId;
+    // 🔥 FIX: Catch the timezone from the frontend, default to UTC if missing
+    const userTz = req.query.tz || "UTC"; 
     const mongoose = require("mongoose"); // Ensure mongoose is required at the top of your file if not already
 
     // 1. Fetch Logs Grouped by Date using Aggregation
@@ -216,7 +225,8 @@ exports.getUserLog = async (req, res) => {
       {
         $group: {
           _id: {
-            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
+            // 🔥 FIX: Tell MongoDB to group the dates using the user's actual local timezone
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt", timezone: userTz },
           },
           events: {
             $push: {
@@ -270,7 +280,7 @@ exports.getUserLog = async (req, res) => {
 
     // Return the new grouped logs alongside the resource usage
     res.status(200).json({ 
-      timeline: groupedLogs, // This is now date-wise
+      timeline: groupedLogs, // This is now date-wise based on local time!
       accessLogs 
     });
   } catch (error) {
@@ -338,4 +348,3 @@ exports.securePublicAccount = async (req, res) => {
     res.status(500).json({ message: "Server error securing account" });
   }
 };
-

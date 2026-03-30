@@ -169,5 +169,10 @@ activitySchema.pre(["updateOne", "findOneAndUpdate"], function (next) {
   next();
 });
 
+activitySchema.index({ action: 1 });
+activitySchema.index({ prediction: 1, createdAt: -1 });
+// Allows fast filtering for the ground-truth calculations
+activitySchema.index({ actual_label: 1, createdAt: -1 });
+
 const ActivityLog = mongoose.model("ActivityLog", activitySchema);
 module.exports = ActivityLog;

@@ -66,4 +66,7 @@ const adminSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+// ✅ ADDED INDEXES FOR QUERY OPTIMIZATION
+adminSchema.index({ createdAt: -1 });
+
 module.exports = mongoose.model("Admin", adminSchema);

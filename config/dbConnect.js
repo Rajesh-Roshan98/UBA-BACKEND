@@ -1,9 +1,18 @@
 const mongoose = require("mongoose");
 
+// Set strictQuery to true to prepare for Mongoose 7 changes
+mongoose.set("strictQuery", true);
+
 const connectWithRetry = async (retries = 5, delay = 3000) => {
   const DB_URL = process.env.DB_URL;
   if (!DB_URL) {
     console.error("❌ DB_URL is not defined in environment variables!");
+    return;
+  }
+
+  // ✅ Reuse existing connection if already established
+  if (mongoose.connection.readyState === 1) {
+    console.log("✅ Already connected to DB");
     return;
   }
 

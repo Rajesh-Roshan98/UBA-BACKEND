@@ -12,10 +12,12 @@ exports.getSystemLogs = async (req, res) => {
     if (component && component !== 'all') query.component = component;
      
     // Populate user to search by email
+    // ✅ OPTIMIZED: Added .lean() to prevent Mongoose from building 100 heavy document objects
     let logs = await ActivityLog.find(query)
         .populate("user_id", "email")
         .sort({ createdAt: -1 })
-        .limit(100); // Limit for performance
+        .limit(100) // Limit for performance
+        .lean();
 
     // Search Logic (Basic in-memory or advanced Mongo regex)
     if (search) {

@@ -7,8 +7,10 @@ const axios = require("axios");
  * Extracts device and location info from the Express request object
  */
 const getDeviceInfo = async (req) => {
-  if (!req) return { deviceName: "Unknown", locationString: "Unknown" };
- 
+  if (!req) {
+    return { deviceName: "Unknown", locationString: "Unknown" };
+  }
+
   const userAgent = req.headers["user-agent"] || "";
   const parser = new UAParser(userAgent);
   const result = parser.getResult();
@@ -36,35 +38,55 @@ const getDeviceInfo = async (req) => {
   }
 
   // 🔥 IMPROVED: Check multiple headers to find the real public IP
-  const ipAddress = 
-    req.headers["x-forwarded-for"]?.split(',')[0].trim() || 
+  const ipAddress = (
+    req.headers["x-forwarded-for"] || 
     req.headers["x-real-ip"] || 
     req.socket?.remoteAddress || 
-    "";
+    req.ip ||
+    ""
+  ).split(',')[0].trim();
 
   let locationString = "Unknown";
 
   try {
     let fetchIp = ipAddress;
     
-    if (fetchIp.includes('::1') || fetchIp.includes('127.0.0.1') || !fetchIp) {
-      fetchIp = ''; 
+    // 1. Strip out IPv6 wrapping (turns ::ffff:10.x.x.x into 10.x.x.x)
+    if (fetchIp.startsWith('::ffff:')) {
+      fetchIp = fetchIp.replace('::ffff:', '');
     }
     
-    // 🔥 FIX: Added a strict 300ms timeout to prevent this free API from slowing down logins!
-    const geoRes = await axios.get(`http://ip-api.com/json/${fetchIp}`, { timeout: 300 });
+    // 2. Check for all local IP variations
+    if (fetchIp === '::1' || fetchIp === '127.0.0.1' || fetchIp.startsWith('10.') || fetchIp.startsWith('192.168.') || !fetchIp) {
+      fetchIp = ''; 
+    }
+
+    // 🔥 FIX 1: Bumped timeout to 3000ms for slower campus/public networks
+    const geoRes = await axios.get(`http://ip-api.com/json/${fetchIp}`, { timeout: 3000 });
     
     if (geoRes.data && geoRes.data.status === 'success') {
       const city = geoRes.data.city || "Unknown City";
       const state = geoRes.data.regionName || "Unknown State";
       locationString = `${city}, ${state}`;
+    } else if (geoRes.data && geoRes.data.status === 'fail') {
+      // Catch ip-api.com specific errors (like private IP blocks)
+      console.log(`⚠️ IP-API Error: ${geoRes.data.message}`);
     }
   } catch (geoError) {
-    // We intentionally ignore timeout errors here so the user can still log in instantly
-    // even if the location couldn't be fetched in time.
-    if (geoError.code !== 'ECONNABORTED') {
-       console.error("GeoIP Fetch Error:", geoError.message);
+    // 🔥 FIX 2: Stop silently ignoring errors so we can actually debug!
+    if (geoError.code === 'ECONNABORTED') {
+      console.log("⚠️ Location fetch timed out (network is too slow).");
+    } else if (geoError.response && geoError.response.status === 429) {
+      console.log("⚠️ Location fetch failed: Rate limited by ip-api.com (Too many requests).");
+    } else {
+      console.log(`⚠️ Location fetch failed: ${geoError.message}`);
     }
+  }
+
+  // 🔥 FORMATTED TERMINAL OUTPUT AS REQUESTED (Prints only the clean string)
+  if (process.env.NODE_ENV !== "production") {
+    const now = new Date().toLocaleString("en-GB", { hour12: true });
+    console.log(`📱 ${deviceName} | 🌍 ${locationString} | 🕒 ${now}`);
   }
 
   return { deviceName, locationString };
@@ -73,7 +95,6 @@ const getDeviceInfo = async (req) => {
 /**
  * Reusable function to log user activity anywhere in the app
  */
-// 🔥 NEW: Added adminId, role, and email to the destructured parameters
 const logActivity = async ({ userId, adminId, role, email, action, category, details, status = "success", req = null }) => {
   try {
     let device = "Unknown";
@@ -90,8 +111,8 @@ const logActivity = async ({ userId, adminId, role, email, action, category, det
     // ==========================================
     if (role === "admin" || adminId) {
       await AdminLog.create({
-        admin: adminId || userId, // Fallback to userId if it was passed generically by mistake
-        email, // 🔥 ADDED: include email to satisfy schema requirement
+        admin: adminId || userId,
+        email, 
         action,
         category,
         details,
@@ -99,14 +120,14 @@ const logActivity = async ({ userId, adminId, role, email, action, category, det
         location,
         device
       });
-      return; // Stop execution here so it doesn't duplicate the log in UserLog
+      return; 
     }
     // ==========================================
 
     // EXISTING LOGIC (Untouched)
     await UserLog.create({
       user: userId,
-      email, // 🔥 ADDED: include email to satisfy schema requirement
+      email, 
       action,
       category,
       details,

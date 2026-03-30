@@ -86,7 +86,8 @@ exports.updateAccount = async (req, res) => {
     // ==========================================
     if (req.user && req.user.role === "admin") {
       if (email !== undefined) {
-        const currentAdmin = await Admin.findById(req.user.userId).select('email');
+        // ✅ OPTIMIZED: Added .lean()
+        const currentAdmin = await Admin.findById(req.user.userId).select('email').lean();
         if (email !== currentAdmin.email) {
           updateData.email = email;
           emailChanged = true;
@@ -95,11 +96,12 @@ exports.updateAccount = async (req, res) => {
         }
       }
 
+      // ✅ OPTIMIZED: Added .lean()
       const updatedAdmin = await Admin.findByIdAndUpdate(
         req.user.userId,
         { $set: updateData }, 
         { new: true, runValidators: true, timestamps: { createdAt: false, updatedAt: true } }
-      ).select('-password');
+      ).select('-password').lean();
 
       let logDetailsMessage = "Admin updated their general account information";
       if (emailChanged) { logDetailsMessage = `Admin changed their email address to ${email}`; }
@@ -119,7 +121,8 @@ exports.updateAccount = async (req, res) => {
 
     // Check if email is changing to reset verification status
     if (email !== undefined) {
-      const currentUser = await User.findById(req.user.userId).select('email');
+      // ✅ OPTIMIZED: Added .lean()
+      const currentUser = await User.findById(req.user.userId).select('email').lean();
       if (email !== currentUser.email) {
         updateData.email = email;
         updateData.isEmailVerified = false;
@@ -129,6 +132,7 @@ exports.updateAccount = async (req, res) => {
       }
     }
 
+    // ✅ OPTIMIZED: Added .lean()
     const updatedUser = await User.findByIdAndUpdate(
       req.user.userId,
       { $set: updateData }, 
@@ -138,7 +142,7 @@ exports.updateAccount = async (req, res) => {
         // 🔥 THE FIX: Strictly command Mongoose to ignore createdAt during this update
         timestamps: { createdAt: false, updatedAt: true } 
       }
-    ).select('-password');
+    ).select('-password').lean();
 
     // 🔥 Make the log details dynamic!
     let logDetailsMessage = "User updated their general account information";
@@ -213,31 +217,58 @@ exports.getUserSessions = async (req, res) => {
     // 🔥 NEW: INJECTED ADMIN LOGIC
     // ==========================================
     if (req.user && req.user.role === "admin") {
-      const activeAdminSessions = await AdminSession.find({ admin: userId }).sort({ createdAt: -1 });
-      const formattedAdminSessions = activeAdminSessions.map((session) => ({
-        id: session._id,
-        device: session.deviceInfo,
-        ip: session.ipAddress,
-        location: session.location, 
-        lastActive: session.createdAt,
-        current: session.token === currentToken 
-      }));
+      // ✅ OPTIMIZED: Added .lean()
+      const activeAdminSessions = await AdminSession.find({ admin: userId }).sort({ createdAt: -1 }).lean();
+      
+      const formattedAdminSessions = activeAdminSessions.map((session) => {
+        // 🔥 THE FIX: Extract device and location from the combined deviceInfo string
+        let deviceName = session.deviceInfo;
+        let locationName = session.location || "Unknown";
+        
+        if (session.deviceInfo && session.deviceInfo.includes(" | Location: ")) {
+          const parts = session.deviceInfo.split(" | Location: ");
+          deviceName = parts[0].replace("[Device: ", "").trim();
+          locationName = parts[1].replace("]", "").trim();
+        }
+
+        return {
+          id: session._id,
+          device: deviceName,
+          ip: session.ipAddress,
+          location: locationName, 
+          lastActive: session.createdAt,
+          current: session.token === currentToken 
+        };
+      });
       return res.status(200).json({ sessions: formattedAdminSessions });
     }
     // ==========================================
 
     // 🔥 UPDATED: Query the actual Session collection instead of the User document
-    const activeSessions = await Session.find({ user: userId }).sort({ createdAt: -1 });
+    // ✅ OPTIMIZED: Added .lean()
+    const activeSessions = await Session.find({ user: userId }).sort({ createdAt: -1 }).lean();
 
     // Format the database sessions to match what the React frontend expects
-    const formattedSessions = activeSessions.map((session) => ({
-      id: session._id,
-      device: session.deviceInfo,
-      ip: session.ipAddress,
-      location: session.location, // 🔥 ADDED: Included location so Settings.jsx can render it
-      lastActive: session.createdAt,
-      current: session.token === currentToken // Highlights "Current" in UI if tokens match
-    }));
+    const formattedSessions = activeSessions.map((session) => {
+      // 🔥 THE FIX: Extract device and location from the combined deviceInfo string
+      let deviceName = session.deviceInfo;
+      let locationName = session.location || "Unknown";
+      
+      if (session.deviceInfo && session.deviceInfo.includes(" | Location: ")) {
+        const parts = session.deviceInfo.split(" | Location: ");
+        deviceName = parts[0].replace("[Device: ", "").trim();
+        locationName = parts[1].replace("]", "").trim();
+      }
+
+      return {
+        id: session._id,
+        device: deviceName,
+        ip: session.ipAddress,
+        location: locationName, 
+        lastActive: session.createdAt,
+        current: session.token === currentToken 
+      };
+    });
 
     res.status(200).json({ sessions: formattedSessions });
   } catch (err) {

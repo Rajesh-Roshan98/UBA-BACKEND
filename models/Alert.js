@@ -44,4 +44,7 @@ const alertSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+alertSchema.index({ user: 1, createdAt: -1 });
+alertSchema.index({ severity: 1, status: 1 });
+
 module.exports = mongoose.model('Alert', alertSchema);

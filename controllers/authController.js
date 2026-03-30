@@ -47,7 +47,8 @@ exports.sendOtp = async (req, res) => {
         message: "Email is required",
       });
 
-    const user = await User.findOne({ email });
+    // ✅ OPTIMIZED: Added .lean()
+    const user = await User.findOne({ email }).lean();
 
     if (!user)
       return res.status(404).json({
@@ -61,7 +62,8 @@ exports.sendOtp = async (req, res) => {
         message: "Email already verified",
       });
 
-    const existingOtp = await Otp.findOne({ email });
+    // ✅ OPTIMIZED: Added .lean()
+    const existingOtp = await Otp.findOne({ email }).lean();
 
     if (
       existingOtp &&
@@ -112,7 +114,8 @@ exports.verifyOtp = async (req, res) => {
         message: "Email and OTP are required",
       });
 
-    const record = await Otp.findOne({ email });
+    // ✅ OPTIMIZED: Added .lean()
+    const record = await Otp.findOne({ email }).lean();
     if (!record)
       return res.status(400).json({
         success: false,
@@ -134,6 +137,7 @@ exports.verifyOtp = async (req, res) => {
       });
     }
 
+    // ⚠️ NO LEAN HERE: We need the full Mongoose object to call user.save() below
     const user = await User.findOne({ email });
     if (!user)
       return res.status(404).json({
@@ -177,7 +181,8 @@ exports.signUp = async (req, res) => {
     if (!firstName || !lastName || !email || !password)
       return res.status(400).json({ success: false, message: "All fields are required" });
 
-    const exists = await User.findOne({ email });
+    // ✅ OPTIMIZED: Added .lean()
+    const exists = await User.findOne({ email }).lean();
     if (exists) return res.status(409).json({ success: false, message: "User already exists" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -244,14 +249,16 @@ exports.loginUser = async (req, res) => {
     // Construct the device info string exactly as used in sessions
     const deviceInfoString = `[Device: ${deviceName} | Location: ${locationString}]`;
 
-    const user = await User.findOne({ email }).select("+password");
+    // ✅ OPTIMIZED: Added .lean()
+    const user = await User.findOne({ email }).select("+password").lean();
     if (!user) {
 
       // ==========================================
       // 🔥 NEW: INJECTED ADMIN LOGIN LOGIC 
       // Executed ONLY if the email is not found in the User table.
       // ==========================================
-      const admin = await Admin.findOne({ email }).select("+password");
+      // ✅ OPTIMIZED: Added .lean()
+      const admin = await Admin.findOne({ email }).select("+password").lean();
       if (admin) {
         const match = await bcrypt.compare(password, admin.password);
         if (!match) {
@@ -266,7 +273,8 @@ exports.loginUser = async (req, res) => {
             role: "admin"
           });
           
-          const failedLog = await AdminLog.findOne({ admin: admin._id, status: "failed" }).sort({ createdAt: -1 });
+          // ✅ OPTIMIZED: Added .lean()
+          const failedLog = await AdminLog.findOne({ admin: admin._id, status: "failed" }).sort({ createdAt: -1 }).lean();
           const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
           const failedAttemptsCount = await AdminLog.countDocuments({
             admin: admin._id, action: "login", status: "failed", createdAt: { $gte: fifteenMinutesAgo }
@@ -292,13 +300,24 @@ exports.loginUser = async (req, res) => {
         );
 
         // Check if this device+location is new for the admin
+        // ✅ OPTIMIZED: Added .lean()
         const existingAdminSession = await AdminSession.findOne({
           admin: admin._id,
           deviceInfo: deviceInfoString,
-        });
+        }).lean();
 
-        // 🔥 MODIFIED: Only fire Notification if NO device cookie is found AND no existing session
-        if (!deviceCookie && !existingAdminSession) {
+        // 🔥 UBA FIX: Database Memory Retrieval
+        // The $or statement catches the exact location OR an "Unknown" location caused by API rate limits
+        const knownAdminDevice = await AdminLog.findOne({
+          admin: admin._id,
+          action: "login",
+          device: deviceName,
+          $or: [{ location: locationString }, { location: "Unknown" }], 
+          status: "success" 
+        }).lean();
+
+        // 🔥 MODIFIED: Only fire Notification if NO cookie, NO active session, AND NO historical login
+        if (!deviceCookie && !existingAdminSession && !knownAdminDevice) {
           await Notification.create({
             user: admin._id, // store admin _id in the same 'user' field
             type: 'new_login',
@@ -322,17 +341,24 @@ exports.loginUser = async (req, res) => {
           role: "admin"
         });
 
+        // 🔥 FIX: ADDED location, ipAddress, and email TO ADMIN SESSION
         await AdminSession.findOneAndUpdate(
           { admin: admin._id, deviceInfo: deviceInfoString },
-          { token: token, createdAt: Date.now() },
+          { 
+            token: token, 
+            createdAt: Date.now(),
+            location: locationString, // Added
+            ipAddress: ipAddress,     // Added
+            email: admin.email        // Added
+          },
           { upsert: true, new: true, setDefaultsOnInsert: true }
         );
 
-        // 🔥 NEW: Set the device cookie before returning response
+        // 🔥 FIX: Dynamic cookie options to survive cross-port local network testing better
         res.cookie('deviceId', deviceId, {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
           maxAge: thirtyDays,
         });
 
@@ -374,7 +400,8 @@ exports.loginUser = async (req, res) => {
       });
 
       // Need to find the specific log ID for the email alert
-      const failedLog = await UserLog.findOne({ user: user._id, status: "failed" }).sort({ createdAt: -1 });
+      // ✅ OPTIMIZED: Added .lean()
+      const failedLog = await UserLog.findOne({ user: user._id, status: "failed" }).sort({ createdAt: -1 }).lean();
 
       const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
       const failedAttemptsCount = await UserLog.countDocuments({
@@ -411,13 +438,24 @@ exports.loginUser = async (req, res) => {
     );
 
     // Check if this device+location is new for the user
+    // ✅ OPTIMIZED: Added .lean()
     const existingSession = await Session.findOne({
       user: user._id,
       deviceInfo: deviceInfoString,
-    });
+    }).lean();
 
-    // 🔥 MODIFIED: Only fire Notification if NO device cookie is found AND no existing session
-    if (!deviceCookie && !existingSession) {
+    // 🔥 UBA FIX: Database Memory Retrieval
+    // The $or statement catches the exact location OR an "Unknown" location caused by API rate limits
+    const knownUserDevice = await UserLog.findOne({
+      user: user._id,
+      action: "login",
+      device: deviceName,
+      $or: [{ location: locationString }, { location: "Unknown" }], 
+      status: "success"
+    }).lean();
+
+    // 🔥 MODIFIED: Only fire Notification if NO cookie, NO active session, AND NO historical login
+    if (!deviceCookie && !existingSession && !knownUserDevice) {
       await Notification.create({
         user: user._id,
         type: 'new_login',
@@ -441,8 +479,7 @@ exports.loginUser = async (req, res) => {
       req: req
     });
 
-    // 🔥 SMART SESSION LOGIC: 
-    // Uses findOneAndUpdate with upsert to ensure only ONE session exists per device.
+    // 🔥 FIX: ADDED location, ipAddress, and email TO USER SESSION
     await Session.findOneAndUpdate(
       { 
         user: user._id, 
@@ -450,7 +487,10 @@ exports.loginUser = async (req, res) => {
       },
       { 
         token: token, 
-        createdAt: Date.now() // Resets expiry
+        createdAt: Date.now(), // Resets expiry
+        location: locationString, // Added
+        ipAddress: ipAddress,     // Added
+        email: user.email         // Added
       },
       { 
         upsert: true, 
@@ -459,11 +499,11 @@ exports.loginUser = async (req, res) => {
       }
     );
 
-    // 🔥 NEW: Set the device cookie before returning response
+    // 🔥 FIX: Dynamic cookie options to survive cross-port local network testing better
     res.cookie('deviceId', deviceId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: thirtyDays,
     });
 
@@ -492,13 +532,15 @@ exports.loginUser = async (req, res) => {
 /* ================= LOAD USER ================= */
 exports.getUserDetail = async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId).select("-password");
+    // ✅ OPTIMIZED: Added .lean()
+    const user = await User.findById(req.user.userId).select("-password").lean();
     if (!user) {
       
       // ==========================================
       // 🔥 NEW: INJECTED ADMIN LOAD LOGIC
       // ==========================================
-      const admin = await Admin.findById(req.user.userId).select("-password");
+      // ✅ OPTIMIZED: Added .lean()
+      const admin = await Admin.findById(req.user.userId).select("-password").lean();
       if (admin) {
         return res.status(200).json({ success: true, user: admin });
       }
@@ -596,16 +638,19 @@ exports.forgotPasswordSendOtp = async (req, res) => {
     }
 
     // 🔥 FIX: Check User first, then Admin
-    let account = await User.findOne({ email });
+    // ✅ OPTIMIZED: Added .lean()
+    let account = await User.findOne({ email }).lean();
     if (!account) {
-      account = await Admin.findOne({ email });
+      // ✅ OPTIMIZED: Added .lean()
+      account = await Admin.findOne({ email }).lean();
     }
 
     if (!account) {
       return res.status(404).json({ success: false, message: "No account found with that email address" });
     }
 
-    const existingOtp = await Otp.findOne({ email });
+    // ✅ OPTIMIZED: Added .lean()
+    const existingOtp = await Otp.findOne({ email }).lean();
     if (existingOtp && Date.now() - existingOtp.createdAt < RESEND_COOLDOWN) {
       return res.status(429).json({ success: false, message: "Please wait before requesting another OTP" });
     }
@@ -644,7 +689,8 @@ exports.forgotPasswordVerifyOtp = async (req, res) => {
       return res.status(400).json({ success: false, message: "Email and OTP are required" });
     }
 
-    const record = await Otp.findOne({ email });
+    // ✅ OPTIMIZED: Added .lean()
+    const record = await Otp.findOne({ email }).lean();
     if (!record) {
       return res.status(400).json({ success: false, message: "OTP not found or expired" });
     }
@@ -674,12 +720,14 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: "Email, OTP, and new password are required" });
     }
 
-    const record = await Otp.findOne({ email });
+    // ✅ OPTIMIZED: Added .lean()
+    const record = await Otp.findOne({ email }).lean();
     if (!record || parseInt(otp) !== record.otp) {
       return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
     }
 
     // 🔥 FIX: Find the account in either collection
+    // ⚠️ NO LEAN HERE: We need the full Mongoose object to call account.save() below
     let account = await User.findOne({ email });
     let role = "user";
 
@@ -737,6 +785,7 @@ exports.changePassword = async (req, res) => {
     const { currentPassword, newPassword } = req.body;
 
     // 🔥 FIX: Fetch user or admin with password
+    // ⚠️ NO LEAN HERE: We need the full Mongoose object to call account.save() below
     let account = await User.findById(req.user.userId).select("+password");
     let role = "user";
 
@@ -807,10 +856,11 @@ exports.changePassword = async (req, res) => {
 // Get unread notifications for the logged-in user (works for both user and admin)
 exports.getMyNotifications = async (req, res) => {
   try {
+    // ✅ OPTIMIZED: Added .lean()
     const notifications = await Notification.find({
       user: req.user.userId,
       read: false,
-    }).sort({ createdAt: -1 });
+    }).sort({ createdAt: -1 }).lean();
     res.json(notifications);
   } catch (error) {
     console.error('Get notifications error:', error);

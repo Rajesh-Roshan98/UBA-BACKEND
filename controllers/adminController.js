@@ -141,7 +141,10 @@ exports.updateUserStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status, role } = req.body;
-    const user = await User.findByIdAndUpdate(id, { status, role }, { new: true });
+    
+    // ✅ OPTIMIZED: Added .lean() 
+    const user = await User.findByIdAndUpdate(id, { status, role }, { new: true }).lean();
+    
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     res.status(200).json({ success: true, message: "User updated", user });
   } catch (err) {
@@ -152,8 +155,8 @@ exports.updateUserStatus = async (req, res) => {
 /* ================= ACCESS CONTROL ================= */
 exports.getPermissions = async (req, res) => {
   try {
-    // Removed dummy data fallback. Now strictly returns what's in the DB.
-    const permissions = await Permission.find();
+    // ✅ OPTIMIZED: Added .lean()
+    const permissions = await Permission.find().lean();
     res.status(200).json({ success: true, permissions });
   } catch (err) {
     console.error("GET PERMISSIONS ERROR:", err);
@@ -165,7 +168,9 @@ exports.getPermissions = async (req, res) => {
 exports.grantAccess = async (req, res) => {
   try {
     const { resource, userEmail, accessType, justification, expiryDate } = req.body;
-    let user = await User.findOne({ email: userEmail });
+    
+    // ✅ OPTIMIZED: Added .lean()
+    let user = await User.findOne({ email: userEmail }).lean();
     const userId = user ? user._id : null; 
     if (!userId) return res.status(404).json({ success: false, message: "User must be registered to grant permissions" });
 

@@ -12,7 +12,8 @@ exports.createLog = async (req, res) => {
     }
 
     // Fetch existing logs for this user 
-    const userLogs = await ActivityLog.find({ user_id });
+    // ✅ OPTIMIZED: Added .lean() to make counting past metrics lightning fast and memory efficient
+    const userLogs = await ActivityLog.find({ user_id }).lean();
 
     // ---------- FEATURE CALCULATIONS ----------
     
@@ -242,7 +243,8 @@ exports.createLog = async (req, res) => {
 
 exports.getLogs = async (req, res) => {
   try {
-    const logs = await ActivityLog.find().sort({ createdAt: -1 });
+    // ✅ OPTIMIZED: Added .lean() 
+    const logs = await ActivityLog.find().sort({ createdAt: -1 }).lean();
     res.status(200).json(logs);
   } catch (err) {
     console.error("Error fetching logs:", err);

@@ -27,7 +27,8 @@ exports.auth = async (req, res, next) => {
     // Intercepts admins so they don't fail the User Session check below
     // ==========================================
     if (decoded.role === "admin") {
-      const activeAdminSession = await AdminSession.findOne({ admin: decoded.userId, token: token });
+      // ✅ Added .lean() for performance
+      const activeAdminSession = await AdminSession.findOne({ admin: decoded.userId, token: token }).lean();
       if (!activeAdminSession) {
         return res.status(401).json({
           success: false,
@@ -35,7 +36,8 @@ exports.auth = async (req, res, next) => {
         });
       }
 
-      const admin = await Admin.findById(decoded.userId).select("-password");
+      // ✅ Added .lean() for performance
+      const admin = await Admin.findById(decoded.userId).select("-password").lean();
       if (!admin) {
         return res.status(401).json({
           success: false,
@@ -64,7 +66,8 @@ exports.auth = async (req, res, next) => {
 
     // 🔥 NEW: Check if this specific session still exists in the database
     // If you clicked "Logout" on another device, this will return null and block them!
-    const activeSession = await Session.findOne({ user: decoded.userId, token: token });
+    // ✅ Added .lean() for performance
+    const activeSession = await Session.findOne({ user: decoded.userId, token: token }).lean();
     if (!activeSession) {
       return res.status(401).json({
         success: false,
@@ -73,7 +76,8 @@ exports.auth = async (req, res, next) => {
     }
 
     // 🔍 Fetch fresh user data from DB
-    const user = await User.findById(decoded.userId).select("-password");
+    // ✅ Added .lean() for performance
+    const user = await User.findById(decoded.userId).select("-password").lean();
 
     if (!user) {
       return res.status(401).json({

@@ -53,5 +53,6 @@ userLogSchema.index({ category: 1 });
 
 // 🔥 UBA OPTIMIZATION (NEW): Helps your anomaly detection engine quickly compare login locations
 userLogSchema.index({ user: 1, action: 1, location: 1 });
+userLogSchema.index({ user: 1, action: 1, status: 1, createdAt: -1 });
 
 module.exports = mongoose.model("UserLog", userLogSchema);

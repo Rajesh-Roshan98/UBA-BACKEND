@@ -83,4 +83,8 @@ const userSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+// ✅ ADDED INDEXES FOR QUERY OPTIMIZATION
+userSchema.index({ createdAt: -1 });
+userSchema.index({ riskScore: 1 });
+
 module.exports = mongoose.model("User", userSchema);

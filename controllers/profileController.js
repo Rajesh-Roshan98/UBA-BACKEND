@@ -228,7 +228,8 @@ exports.uploadAvatar = async (req, res) => {
     // ==========================================
     if (req.user && req.user.role === "admin") {
       try {
-        const currentAdmin = await Admin.findById(req.user.userId);
+        // ✅ OPTIMIZED: Added .lean()
+        const currentAdmin = await Admin.findById(req.user.userId).lean();
         if (currentAdmin && currentAdmin.avatar && currentAdmin.avatar.trim() !== "") {
           const oldImagePath = path.join(__dirname, '..', currentAdmin.avatar);
           if (fs.existsSync(oldImagePath)) {
@@ -239,11 +240,12 @@ exports.uploadAvatar = async (req, res) => {
         console.error("Failed to delete old admin avatar file:", fsError);
       }
 
+      // ✅ OPTIMIZED: Added .lean()
       const updatedAdmin = await Admin.findByIdAndUpdate(
         req.user.userId,
         { avatar: avatarUrlPath },
         { new: true }
-      ).select('-password');
+      ).select('-password').lean();
 
       if (!updatedAdmin) {
         return res.status(404).json({ success: false, message: 'Admin not found during update' });
@@ -269,7 +271,8 @@ exports.uploadAvatar = async (req, res) => {
     // ==========================================
 
     try {
-      const currentUser = await User.findById(req.user.userId);
+      // ✅ OPTIMIZED: Added .lean()
+      const currentUser = await User.findById(req.user.userId).lean();
       if (currentUser && currentUser.avatar && currentUser.avatar.trim() !== "") {
         const oldImagePath = path.join(__dirname, '..', currentUser.avatar);
         if (fs.existsSync(oldImagePath)) {
@@ -280,11 +283,12 @@ exports.uploadAvatar = async (req, res) => {
       console.error("Failed to delete old avatar file:", fsError);
     }
 
+    // ✅ OPTIMIZED: Added .lean()
     const updatedUser = await User.findByIdAndUpdate(
       req.user.userId,
       { avatar: avatarUrlPath },
       { new: true }
-    ).select('-password');
+    ).select('-password').lean();
 
     if (!updatedUser) {
       return res.status(404).json({ success: false, message: 'User not found during update' });
