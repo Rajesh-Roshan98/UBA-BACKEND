@@ -1,0 +1,39 @@
+# 1. Environment variables & Secrets
+.env
+.env.*
+scripts/admin.json
+scripts/admin-seed.json
+
+# 1. Environment variables & Secrets
+UBA-BACKEND/scripts/admin.json
+UBA-BACKEND/scripts/admin-seed.json
+
+# 2. Raw datasets (Large + Sensitive)
+raw/
+UBA-BACKEND/ml/data/raw/
+
+# 3. Processed ML data
+UBA-BACKEND/ml/data/processed/
+UBA-BACKEND/ml/data/front/processed/
+
+# 4. ML models & locks
+*.pkl
+*.lock
+
+# 5. Python garbage/cache files
+__pycache__/
+*.pyc
+
+# 6. User Uploads & Temp files
+UBA-BACKEND/temp_uploads/
+UBA-BACKEND/uploads/
+
+# 7. Node modules
+node_modules/
+
+# 8. Logs
+*.log
+
+# 9. OS files
+.DS_Store
+Thumbs.db
