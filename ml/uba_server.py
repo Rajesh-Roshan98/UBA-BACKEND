@@ -219,6 +219,22 @@ def detect_user_column(cols):
     else:
         raise ValueError("No user column found in CSV")
 
+# NEW: Check if model is already trained
+def is_model_trained() -> bool:
+    """Return True if model metadata exists and at least one model file is present."""
+    if not METADATA_FILE.exists():
+        return False
+    try:
+        metadata = joblib.load(METADATA_FILE)
+        role_models = metadata.get("role_models", {})
+        # Check if at least one model file from metadata actually exists
+        for model_path in role_models.values():
+            if os.path.exists(model_path):
+                return True
+        return False
+    except Exception:
+        return False
+
 # ==============================
 # 3. Pipeline Step 1: Feature Extraction (Optimized)
 # ==============================
@@ -1185,8 +1201,16 @@ async def api_extract_features(api_key: str = Depends(rate_limit)):
 @app.post("/train-model")
 async def api_train_model(api_key: str = Depends(rate_limit)):
     start_time = time.time()
+    # Fast path check: if model already exists, skip immediately
+    if is_model_trained():
+        logger.info("Completed: Model is already trained. Skipping training process (fast check).")
+        return {"status": "success", "message": "Model is already trained. No new training was performed.", "latency_seconds": 0.0}
     try:
         with FileLock(str(LOCK_FILE), timeout=60):
+            # Double-check inside the lock (in case another request just finished training)
+            if is_model_trained():
+                logger.info("Completed: Model is already trained. Skipping training process (double-check).")
+                return {"status": "success", "message": "Model is already trained. No new training was performed.", "latency_seconds": 0.0}
             await asyncio.to_thread(train_model)
         latency = time.time() - start_time
         return {"status": "success", "message": "Model training completed successfully.", "latency_seconds": round(latency, 2)}

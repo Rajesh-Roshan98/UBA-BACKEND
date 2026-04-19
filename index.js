@@ -140,7 +140,7 @@ app.get("/health", (_, res) => {
 });
 
 /* ---------- ROUTES ---------- */
-app.use("/api/v1", authRouter); // 🔑 AuthContext uses this
+app.use("/api/v1", authRouter); 
 app.use("/api/uba", ubaRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/user", userRoutes);
