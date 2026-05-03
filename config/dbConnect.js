@@ -32,10 +32,31 @@ const connectWithRetry = async (retries = 5, delay = 3000) => {
         await new Promise(res => setTimeout(res, delay));
       } else {
         console.error("❌ All DB connection attempts failed!");
-        process.exit(1);
+        // 🔥 IMPROVED: Server stays alive in degraded mode instead of crashing
+        console.error("DB failed, running in degraded mode...");
       }
     }
   }
 };
 
+// ==========================================
+// 🔥 NEW: CONNECTION EVENTS
+// ==========================================
+mongoose.connection.on("connected", () => {
+  // Note: Omitted console.log here to avoid duplicating your existing "✅ DB Connected Successfully" log
+});
+
+mongoose.connection.on("disconnected", () => {
+  console.log("🔴 MongoDB Disconnected (Network Dropped)");
+});
+
+mongoose.connection.on("reconnected", () => {
+  console.log("🟡 MongoDB Reconnected (Network Restored)");
+});
+
+// 🔥 IMPROVED: EXPORT FLAG USING NATIVE MONGOOSE STATE
+const getDBStatus = () => mongoose.connection.readyState === 1;
+
+// ✅ Attach getDBStatus to the function to preserve your existing index.js import logic
 module.exports = connectWithRetry;
+module.exports.getDBStatus = getDBStatus;

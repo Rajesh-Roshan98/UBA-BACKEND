@@ -3,7 +3,7 @@ const Otp = require("../models/otpModel");
 const UserLog = require("../models/userLog"); 
 const Session = require("../models/sessionModel"); 
 const Contact = require("../models/contact");
-const ContactEmail = require("../utils/contactEmail"); // Adjust path if needed
+const ContactEmail = require("../utils/contactEmail");
 
 // 🔥 NEW: Imported the Admin models to inject into existing flow
 const Admin = require("../models/adminModel");
@@ -16,13 +16,114 @@ const Notification = require("../models/Notification");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
-const crypto = require("crypto"); // 🔥 NEW: Imported crypto to generate unique device IDs
+const crypto = require("crypto"); 
 const generateOtpEmail = require("../utils/otpEmailTemplate");
 const failedLoginEmail = require("../utils/loginalertEmail");
 const generateAuthEmail = require("../utils/forgotPassword");
 
 // 🔥 NEW: Imported our reusable logger and device helper
 const { logActivity, getDeviceInfo } = require("../utils/logger");
+const validator = require("validator"); // 🔥 NEW: Ensure validator is available
+
+// 🔥 NEW: Import our Socket helper to emit real-time notifications
+const { emitToUser } = require("../utils/socketConfig"); 
+
+// ==========================================================
+// 🔥 UPGRADED: SECURE CAPTCHA UTILITIES
+// ==========================================================
+const svgCaptcha = require("svg-captcha");
+const rateLimit = require("express-rate-limit");
+
+// 1. Rate Limiting Middleware (10 requests per minute)
+const captchaLimiter = rateLimit({
+  windowMs: 60 * 1000, 
+  max: 10, 
+  message: { success: false, message: "Too many CAPTCHA requests, please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 2. Generate Secure SVG CAPTCHA Data
+const generateCaptchaData = () => {
+  const SECRET = process.env.CAPTCHA_SECRET;
+  if (!SECRET) throw new Error("CAPTCHA_SECRET not set in environment variables");
+
+  // Create an SVG image (Bots can't read this easily)
+  const captcha = svgCaptcha.create({
+    size: 6,
+    noise: 2, // Adds lines/dots to confuse OCR bots
+    color: true,
+    background: '#f4f4f5'
+  });
+
+  const captchaText = captcha.text;
+  const expires = Date.now() + 5 * 60 * 1000; // 5 minutes expiry
+  const nonce = crypto.randomBytes(8).toString('hex'); // Unique random string to prevent replay attacks
+  
+  // Create a stateless hash including the nonce and strict secret
+  const dataToHash = `${captchaText}.${expires}.${nonce}.${SECRET}`;
+  const hash = crypto.createHash('sha256').update(dataToHash).digest('hex');
+  
+  return { 
+    captchaImage: captcha.data, // Send SVG image, NOT text
+    captchaToken: `${hash}.${expires}.${nonce}` 
+  };
+};
+
+// 🔥 UPDATED: Endpoint to fetch CAPTCHA (Wrapped in Rate Limiter)
+exports.getCaptcha = [
+  captchaLimiter,
+  (req, res) => {
+    try {
+      res.status(200).json({ 
+        success: true, 
+        ...generateCaptchaData() 
+      });
+    } catch (error) {
+      console.error("CAPTCHA Generation Error:", error);
+      res.status(500).json({ success: false, message: "Failed to generate CAPTCHA. Check server configuration." });
+    }
+  }
+];
+// ==========================================================
+
+// 🔥 UPDATED: Helper to generate 8-char ID (4 NON-REPEATING letters + 4 random numbers)
+const generateUserId = (fullName) => {
+  // 1. Strip spaces/symbols and convert to uppercase
+  let cleanName = (fullName || "USER").replace(/[^a-zA-Z]/g, '').toUpperCase();
+  if (cleanName.length === 0) cleanName = "USER"; 
+
+  // 2. Extract only UNIQUE letters from the name so we never have a pool with duplicates
+  let uniqueLetters = [...new Set(cleanName.split(''))];
+
+  // 3. Fallback: If the name has fewer than 4 unique letters (e.g., "Bob" -> "B", "O")
+  // we pad the pool with random unused letters from the alphabet until we have 4 options.
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
+  while (uniqueLetters.length < 4) {
+    const randomChar = alphabet[Math.floor(Math.random() * alphabet.length)];
+    if (!uniqueLetters.includes(randomChar)) {
+      uniqueLetters.push(randomChar);
+    }
+  }
+
+  // 4. Pick exactly 4 random, unique letters from our pool
+  let randomLetters = "";
+  for (let i = 0; i < 4; i++) {
+    const randomIndex = Math.floor(Math.random() * uniqueLetters.length);
+    randomLetters += uniqueLetters[randomIndex];
+    // Remove the selected letter so it is impossible to pick it again
+    uniqueLetters.splice(randomIndex, 1);
+  }
+
+  // 5. Generate exactly 4 random numbers
+  let randomNums = "";
+  for (let i = 0; i < 4; i++) {
+    randomNums += Math.floor(Math.random() * 10).toString();
+  }
+
+  // 6. Combine them to enforce the strict 8-character length (4 letters + 4 numbers)
+  return randomLetters + randomNums;
+};
 
 const OTP_EXPIRY = 5 * 60 * 1000;      // 5 minutes
 const RESEND_COOLDOWN = 60 * 1000;    // 60 seconds
@@ -47,7 +148,11 @@ exports.sendOtp = async (req, res) => {
         message: "Email is required",
       });
 
-    // 🔥 OPTIMIZED: Added .select() so we only fetch what we need to check verification
+    // 🔥 INDUSTRY STANDARD: Validate email format before hitting the DB
+    if (!validator.isEmail(email.trim())) {
+      return res.status(400).json({ success: false, message: "Invalid email format" });
+    }
+
     const user = await User.findOne({ email }).select("isEmailVerified").lean();
 
     if (!user)
@@ -62,7 +167,6 @@ exports.sendOtp = async (req, res) => {
         message: "Email already verified",
       });
 
-    // 🔥 OPTIMIZED: Added .select() to only get the timestamp
     const existingOtp = await Otp.findOne({ email }).select("createdAt").lean();
 
     if (
@@ -76,10 +180,13 @@ exports.sendOtp = async (req, res) => {
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000);
+    
+    // 🔥 SECURITY FIX: Hash the OTP before saving to database
+    const hashedOtp = await bcrypt.hash(otp.toString(), 10);
 
     await Otp.findOneAndUpdate(
       { email },
-      { email, otp, createdAt: Date.now() },
+      { email, otp: hashedOtp, createdAt: Date.now() },
       { upsert: true, new: true }
     );
 
@@ -87,7 +194,7 @@ exports.sendOtp = async (req, res) => {
       from: `"UBA Auth" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: "Verify Your Email",
-      html: generateOtpEmail(otp),
+      html: generateOtpEmail(otp), // Send the unhashed OTP to the user's email
     });
 
     return res.status(200).json({
@@ -114,7 +221,6 @@ exports.verifyOtp = async (req, res) => {
         message: "Email and OTP are required",
       });
 
-    // 🔥 OPTIMIZED: Added .select() to avoid fetching heavy MongoDB metadata
     const record = await Otp.findOne({ email }).select("otp createdAt").lean();
     if (!record)
       return res.status(400).json({
@@ -130,14 +236,15 @@ exports.verifyOtp = async (req, res) => {
       });
     }
 
-    if (parseInt(otp) !== record.otp) {
+    // 🔥 SECURITY FIX: Compare incoming OTP with hashed OTP in database
+    const isMatch = await bcrypt.compare(otp.toString(), record.otp);
+    if (!isMatch) {
       return res.status(400).json({
         success: false,
         message: "Invalid OTP",
       });
     }
 
-    // ⚠️ NO LEAN HERE: We need the full Mongoose object to call user.save() below
     const user = await User.findOne({ email });
     if (!user)
       return res.status(404).json({
@@ -148,10 +255,9 @@ exports.verifyOtp = async (req, res) => {
     user.isEmailVerified = true;
     await user.save();
 
-    // 🔥 LOGGING (email added)
     await logActivity({
       userId: user._id,
-      email: user.email,               // <-- ADDED
+      email: user.email,                
       action: "email_verification",
       category: "authentication",
       details: "User successfully verified their email address",
@@ -181,26 +287,46 @@ exports.signUp = async (req, res) => {
     if (!firstName || !lastName || !email || !password)
       return res.status(400).json({ success: false, message: "All fields are required" });
 
-    // 🔥 THE FIX: Upgraded to .exists() per teacher's advice
+    // 🔥 INDUSTRY STANDARD: Name & Email Validation
+    if (firstName.trim().length < 2 || firstName.trim().length > 50) {
+      return res.status(400).json({ success: false, message: "First name must be between 2 and 50 characters" });
+    }
+    if (!validator.isEmail(email.trim())) {
+      return res.status(400).json({ success: false, message: "Invalid email format" });
+    }
+
     const exists = await User.exists({ email });
     if (exists) return res.status(409).json({ success: false, message: "User already exists" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    
+    // 🔥 SECURITY FIX: ID Collision Loop - Guarantee unique ID
+    let generatedUserId;
+    let isUnique = false;
+    
+    while (!isUnique) {
+      // 🔥 FIX: Pass the user's entire name to the generator to pull random letters
+      generatedUserId = generateUserId(`${firstName} ${middleName || ""} ${lastName}`);
+      const idExists = await User.exists({ userId: generatedUserId });
+      if (!idExists) {
+        isUnique = true;
+      }
+    }
 
     const user = await User.create({
-      firstName,
-      middleName,
-      lastName,
-      email,
+      userId: generatedUserId, 
+      firstName: firstName.trim(),
+      middleName: middleName ? middleName.trim() : "",
+      lastName: lastName.trim(),
+      email: email.trim().toLowerCase(),
       password: hashedPassword,
       role: "user", 
       isEmailVerified: false, 
     });
 
-    // 🔥 LOGGING (email added)
     await logActivity({
       userId: user._id,
-      email: user.email,               // <-- ADDED
+      email: user.email,                
       action: "account_creation",
       category: "authentication",
       details: "User registered a new account",
@@ -212,6 +338,7 @@ exports.signUp = async (req, res) => {
       message: "User registered successfully",
       user: {
         id: user._id,
+        userId: user.userId, 
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
@@ -229,41 +356,92 @@ exports.signUp = async (req, res) => {
 
 exports.loginUser = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, identifier, password, captchaInput, captchaToken } = req.body;
+    
+    // ==========================================================
+    // 🔥 UPGRADED: SECURE CAPTCHA VALIDATION
+    // ==========================================================
+    if (!captchaInput || !captchaToken) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "CAPTCHA is required.", 
+        newCaptcha: generateCaptchaData() 
+      });
+    }
 
-    // 🔥 NEW: Check for device cookie to bypass unnecessary notifications
+    const [hash, expires, nonce] = captchaToken.split('.'); // Extract the nonce
+    if (!hash || !expires || !nonce || Date.now() > parseInt(expires, 10)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "CAPTCHA expired or invalid. Please try again.", 
+        newCaptcha: generateCaptchaData() 
+      });
+    }
+
+    const SECRET = process.env.CAPTCHA_SECRET;
+    if (!SECRET) {
+      return res.status(500).json({ success: false, message: "Server misconfiguration. CAPTCHA_SECRET missing." });
+    }
+
+    // Rebuild the hash with the correct secret and nonce to verify
+    const dataToHash = `${captchaInput}.${expires}.${nonce}.${SECRET}`;
+    const validHash = crypto.createHash('sha256').update(dataToHash).digest('hex');
+
+    // Strict Case-Sensitive Match
+    if (hash !== validHash) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid CAPTCHA. Please ensure exact match.", 
+        newCaptcha: generateCaptchaData() 
+      });
+    }
+    // ==========================================================
+
+    const loginIdentifier = (identifier || email || "").trim();
+    if (!loginIdentifier || !password) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Identifier and password are required",
+        newCaptcha: generateCaptchaData() // Regenerate on failure
+      });
+    }
+
+    // 🔥 PRO POLISH: Only lowercase if it's an email format. User IDs remain exact case.
+    const isEmail = loginIdentifier.includes("@");
+    const emailSearch = isEmail ? loginIdentifier.toLowerCase() : loginIdentifier;
+
     const deviceCookie = req.cookies ? req.cookies.deviceId : undefined;
     const deviceId = deviceCookie || crypto.randomUUID();
     const thirtyDays = 30 * 24 * 60 * 60 * 1000;
 
-    // Get device and location info
     const { deviceName, locationString } = await getDeviceInfo(req);
 
-    // Extract IP address for notification data
     const ipAddress = req.headers['x-forwarded-for']?.split(',')[0].trim() ||
                       req.headers['x-real-ip'] ||
                       req.socket?.remoteAddress ||
                       'Unknown';
 
-    // Construct the device info string exactly as used in sessions
     const deviceInfoString = `[Device: ${deviceName} | Location: ${locationString}]`;
 
-    // ✅ OPTIMIZED: Added .lean()
-    const user = await User.findOne({ email }).select("+password").lean();
+    // 🔥 UPDATED: Query checks if input matches 'email' OR 'userId'
+    const user = await User.findOne({ 
+      $or: [{ email: emailSearch }, { userId: loginIdentifier }] 
+    }).select("+password").lean();
+    
     if (!user) {
-
       // ==========================================
-      // 🔥 NEW: INJECTED ADMIN LOGIN LOGIC 
-      // Executed ONLY if the email is not found in the User table.
+      // 🔥 ADMIN LOGIN LOGIC 
       // ==========================================
-      // ✅ OPTIMIZED: Added .lean()
-      const admin = await Admin.findOne({ email }).select("+password").lean();
+      const admin = await Admin.findOne({ 
+        $or: [{ email: emailSearch }, { adminId: loginIdentifier }] 
+      }).select("+password").lean();
+      
       if (admin) {
         const match = await bcrypt.compare(password, admin.password);
         if (!match) {
           await logActivity({
             adminId: admin._id,
-            email: admin.email,               // <-- ADDED
+            email: admin.email,                
             action: "login",
             category: "authentication",
             details: "Failed login attempt - Incorrect password ",
@@ -272,11 +450,9 @@ exports.loginUser = async (req, res) => {
             role: "admin"
           });
           
-          // Left this as findOne to allow sorting for the exact email link
           const failedLog = await AdminLog.findOne({ admin: admin._id, status: "failed" }).sort({ createdAt: -1 }).select("_id").lean();
           const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
           
-          // 🔥 THE FIX: Already perfectly using .countDocuments() here!
           const failedAttemptsCount = await AdminLog.countDocuments({
             admin: admin._id, action: "login", status: "failed", createdAt: { $gte: fifteenMinutesAgo }
           });
@@ -291,7 +467,8 @@ exports.loginUser = async (req, res) => {
               });
             } catch (mailErr) {}
           }
-          return res.status(401).json({ success: false, message: "Invalid credentials" });
+          // 🔥 NEW: Send new Captcha on password failure
+          return res.status(401).json({ success: false, message: "Invalid credentials", newCaptcha: generateCaptchaData() });
         }
 
         const token = jwt.sign(
@@ -300,15 +477,11 @@ exports.loginUser = async (req, res) => {
           { expiresIn: "1d" }
         );
 
-        // Check if this device+location is new for the admin
-        // 🔥 THE FIX: Upgraded to .exists()
         const existingAdminSession = await AdminSession.exists({
           admin: admin._id,
           deviceInfo: deviceInfoString,
         });
 
-        // 🔥 UBA FIX: Database Memory Retrieval
-        // 🔥 THE FIX: Upgraded to .exists()
         const knownAdminDevice = await AdminLog.exists({
           admin: admin._id,
           action: "login",
@@ -317,10 +490,9 @@ exports.loginUser = async (req, res) => {
           status: "success" 
         });
 
-        // 🔥 MODIFIED: Only fire Notification if NO cookie, NO active session, AND NO historical login
         if (!deviceCookie && !existingAdminSession && !knownAdminDevice) {
-          await Notification.create({
-            user: admin._id, // store admin _id in the same 'user' field
+          const newNotif = await Notification.create({
+            user: admin._id, 
             type: 'new_login',
             title: 'New admin login detected',
             message: `New login from ${deviceName} in ${locationString}`,
@@ -330,11 +502,18 @@ exports.loginUser = async (req, res) => {
               ip: ipAddress,
             },
           });
+          
+          // 🔥 UX UPGRADE: Added error safety block to prevent API crash on socket failure
+          try {
+            emitToUser(admin._id.toString(), "new_notification", newNotif);
+          } catch (err) {
+            console.error("Socket emit failed:", err);
+          }
         }
 
         await logActivity({
           adminId: admin._id,
-          email: admin.email,               // <-- ADDED
+          email: admin.email,                
           action: "login",
           category: "authentication",
           details: "Admin logged in successfully ",
@@ -342,20 +521,18 @@ exports.loginUser = async (req, res) => {
           role: "admin"
         });
 
-        // 🔥 FIX: ADDED location, ipAddress, and email TO ADMIN SESSION
         await AdminSession.findOneAndUpdate(
           { admin: admin._id, deviceInfo: deviceInfoString },
           { 
             token: token, 
             createdAt: Date.now(),
             location: locationString, 
-            ipAddress: ipAddress,     
+            ipAddress: ipAddress,   
             email: admin.email        
           },
           { upsert: true, new: true, setDefaultsOnInsert: true }
         );
 
-        // 🔥 FIX: Dynamic cookie options
         res.cookie('deviceId', deviceId, {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
@@ -376,23 +553,15 @@ exports.loginUser = async (req, res) => {
           },
         });
       }
-      // ==========================================
-      // END ADMIN LOGIC INJECTION 
-      // ==========================================
-
-      return res.status(401).json({
-        success: false,
-        message: "Invalid credentials",
-      });
+      // 🔥 NEW: Send new Captcha on total not-found failure
+      return res.status(401).json({ success: false, message: "Invalid credentials", newCaptcha: generateCaptchaData() });
     }
 
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
-      
-      // 🔥 LOGGING (Failed)
       await logActivity({
         userId: user._id,
-        email: user.email,               
+        email: user.email,                
         action: "login",
         category: "authentication",
         details: "Failed login attempt - Incorrect password ",
@@ -400,12 +569,9 @@ exports.loginUser = async (req, res) => {
         req: req
       });
 
-      // Left this as findOne to allow sorting for the exact email link
       const failedLog = await UserLog.findOne({ user: user._id, status: "failed" }).sort({ createdAt: -1 }).select("_id").lean();
-
       const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
       
-      // 🔥 THE FIX: Already using countDocuments() perfectly!
       const failedAttemptsCount = await UserLog.countDocuments({
         user: user._id,
         action: "login",
@@ -427,10 +593,8 @@ exports.loginUser = async (req, res) => {
         }
       }
       
-      return res.status(401).json({
-        success: false,
-        message: "Invalid credentials",
-      });
+      // 🔥 NEW: Send new Captcha on password failure
+      return res.status(401).json({ success: false, message: "Invalid credentials", newCaptcha: generateCaptchaData() });
     }
 
     const token = jwt.sign(
@@ -439,15 +603,11 @@ exports.loginUser = async (req, res) => {
       { expiresIn: "1d" }
     );
 
-    // Check if this device+location is new for the user
-    // 🔥 THE FIX: Upgraded to .exists()
     const existingSession = await Session.exists({
       user: user._id,
       deviceInfo: deviceInfoString,
     });
 
-    // 🔥 UBA FIX: Database Memory Retrieval
-    // 🔥 THE FIX: Upgraded to .exists()
     const knownUserDevice = await UserLog.exists({
       user: user._id,
       action: "login",
@@ -456,9 +616,8 @@ exports.loginUser = async (req, res) => {
       status: "success"
     });
 
-    // 🔥 MODIFIED: Only fire Notification if NO cookie, NO active session, AND NO historical login
     if (!deviceCookie && !existingSession && !knownUserDevice) {
-      await Notification.create({
+      const newNotif = await Notification.create({
         user: user._id,
         type: 'new_login',
         title: 'New login detected',
@@ -469,19 +628,24 @@ exports.loginUser = async (req, res) => {
           ip: ipAddress,
         },
       });
+
+      // 🔥 UX UPGRADE: Added error safety block to prevent API crash on socket failure
+      try {
+        emitToUser(user._id.toString(), "new_notification", newNotif);
+      } catch (err) {
+        console.error("Socket emit failed:", err);
+      }
     }
 
-    // 🔥 LOGGING 
     await logActivity({
       userId: user._id,
-      email: user.email,               
+      email: user.email,                
       action: "login",
       category: "authentication",
       details: "User logged in successfully ",
       req: req
     });
 
-    // 🔥 FIX: ADDED location, ipAddress, and email TO USER SESSION
     await Session.findOneAndUpdate(
       { 
         user: user._id, 
@@ -491,8 +655,8 @@ exports.loginUser = async (req, res) => {
         token: token, 
         createdAt: Date.now(), 
         location: locationString, 
-        ipAddress: ipAddress,     
-        email: user.email         
+        ipAddress: ipAddress,   
+        email: user.email        
       },
       { 
         upsert: true, 
@@ -501,7 +665,6 @@ exports.loginUser = async (req, res) => {
       }
     );
 
-    // 🔥 FIX: Dynamic cookie options
     res.cookie('deviceId', deviceId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -524,43 +687,27 @@ exports.loginUser = async (req, res) => {
     });
   } catch (err) {
     console.error("LOGIN ERROR:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Login failed",
-    });
+    return res.status(500).json({ success: false, message: "Login failed" });
   }
 };
 
 /* ================= LOAD USER ================= */
 exports.getUserDetail = async (req, res) => {
   try {
-    // ✅ OPTIMIZED: Added .lean()
     const user = await User.findById(req.user.userId).select("-password").lean();
     if (!user) {
-      
-      // ==========================================
-      // 🔥 NEW: INJECTED ADMIN LOAD LOGIC
-      // ==========================================
-      // ✅ OPTIMIZED: Added .lean()
       const admin = await Admin.findById(req.user.userId).select("-password").lean();
       if (admin) {
         return res.status(200).json({ success: true, user: admin });
       }
-      // ==========================================
 
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
+      return res.status(404).json({ success: false, message: "User not found" });
     }
 
     return res.status(200).json({ success: true, user });
   } catch (err) {
     console.error("GET USER ERROR:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to load user",
-    });
+    return res.status(500).json({ success: false, message: "Failed to load user" });
   }
 };
 
@@ -568,14 +715,10 @@ exports.getUserDetail = async (req, res) => {
 exports.logoutUser = async (req, res) => {
   try {
     if (req.user && req.user.userId) {
-      
-      // ==========================================
-      // 🔥 NEW: INJECTED ADMIN LOGOUT LOGIC
-      // ==========================================
       if (req.user.role === "admin") {
         await logActivity({
           adminId: req.user.userId,
-          email: req.user.email,               // <-- ADDED
+          email: req.user.email,                
           action: "logout",
           category: "authentication",
           details: "Admin logged out successfully ",
@@ -584,22 +727,13 @@ exports.logoutUser = async (req, res) => {
           role: "admin"
         });
 
-        await AdminSession.deleteOne({
-          admin: req.user.userId,
-          token: req.token 
-        });
-
-        return res.status(200).json({
-          success: true,
-          message: "Logged out successfully",
-        });
+        await AdminSession.deleteOne({ admin: req.user.userId, token: req.token });
+        return res.status(200).json({ success: true, message: "Logged out successfully" });
       }
-      // ==========================================
 
-      // 🔥 LOGGING – email added
-      await logActivity({
+        await logActivity({
         userId: req.user.userId,
-        email: req.user.email,               // <-- ADDED
+        email: req.user.email,                
         action: "logout",
         category: "authentication",
         details: "User logged out successfully ",
@@ -607,22 +741,13 @@ exports.logoutUser = async (req, res) => {
         req: req
       });
 
-      await Session.deleteOne({
-        user: req.user.userId,
-        token: req.token 
-      });
+      await Session.deleteOne({ user: req.user.userId, token: req.token });
     }
 
-    return res.status(200).json({
-      success: true,
-      message: "Logged out successfully",
-    });
+    return res.status(200).json({ success: true, message: "Logged out successfully" });
   } catch (err) {
     console.error("LOGOUT ERROR:", err);
-    return res.status(200).json({
-      success: true,
-      message: "Logged out successfully (with logging error)",
-    });
+    return res.status(200).json({ success: true, message: "Logged out successfully (with logging error)" });
   }
 };
 
@@ -633,48 +758,55 @@ exports.logoutUser = async (req, res) => {
 /* ================= REQUEST FORGOT PASSWORD OTP ================= */
 exports.forgotPasswordSendOtp = async (req, res) => {
   try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ success: false, message: "Email is required" });
+    const { email, identifier } = req.body;
+    
+    const lookupId = (identifier || email || "").trim();
+    if (!lookupId) {
+      return res.status(400).json({ success: false, message: "Email or ID is required" });
     }
 
-    // 🔥 FIX: Check User first, then Admin
-    // 🔥 THE FIX: Upgraded to .exists()
-    let account = await User.exists({ email });
+    // 🔥 INDUSTRY STANDARD: If they provided an email as identifier, validate the format!
+    if (lookupId.includes("@") && !validator.isEmail(lookupId)) {
+      return res.status(400).json({ success: false, message: "Invalid email format" });
+    }
+
+    const emailSearch = lookupId.includes("@") ? lookupId.toLowerCase() : lookupId;
+
+    let account = await User.findOne({ $or: [{ email: emailSearch }, { userId: lookupId }] }).lean();
     if (!account) {
-      account = await Admin.exists({ email });
+      account = await Admin.findOne({ $or: [{ email: emailSearch }, { adminId: lookupId }] }).lean();
     }
 
     if (!account) {
-      return res.status(404).json({ success: false, message: "No account found with that email address" });
+      return res.status(404).json({ success: false, message: "No account found with that email or ID" });
     }
 
-    // 🔥 OPTIMIZED: Added .select("createdAt")
-    const existingOtp = await Otp.findOne({ email }).select("createdAt").lean();
+    const targetEmail = account.email; 
+
+    const existingOtp = await Otp.findOne({ email: targetEmail }).select("createdAt").lean();
     if (existingOtp && Date.now() - existingOtp.createdAt < RESEND_COOLDOWN) {
       return res.status(429).json({ success: false, message: "Please wait before requesting another OTP" });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000);
+    
+    // 🔥 SECURITY FIX: Hash the OTP before saving to database
+    const hashedOtp = await bcrypt.hash(otp.toString(), 10);
 
     await Otp.findOneAndUpdate(
-      { email },
-      { email, otp, createdAt: Date.now() },
+      { email: targetEmail },
+      { email: targetEmail, otp: hashedOtp, createdAt: Date.now() },
       { upsert: true, new: true }
     );
 
     await transporter.sendMail({
       from: `"UBA Auth" <${process.env.EMAIL_USER}>`,
-      to: email,
+      to: targetEmail,
       subject: "Password Reset Request",
       html: generateAuthEmail("OTP", otp), 
     });
 
-    return res.status(200).json({
-      success: true,
-      message: "Password reset OTP sent to email",
-    });
+    return res.status(200).json({ success: true, message: "Password reset OTP sent to email" });
   } catch (err) {
     console.error("FORGOT PASSWORD SEND OTP ERROR:", err);
     return res.status(500).json({ success: false, message: "Failed to send OTP" });
@@ -684,24 +816,33 @@ exports.forgotPasswordSendOtp = async (req, res) => {
 /* ================= VERIFY FORGOT PASSWORD OTP ================= */
 exports.forgotPasswordVerifyOtp = async (req, res) => {
   try {
-    const { email, otp } = req.body;
+    const { email, identifier, otp } = req.body;
+    const lookupId = (identifier || email || "").trim();
 
-    if (!email || !otp) {
-      return res.status(400).json({ success: false, message: "Email and OTP are required" });
+    if (!lookupId || !otp) {
+      return res.status(400).json({ success: false, message: "Identifier and OTP are required" });
     }
 
-    // 🔥 OPTIMIZED: Added .select("otp createdAt")
-    const record = await Otp.findOne({ email }).select("otp createdAt").lean();
+    const emailSearch = lookupId.includes("@") ? lookupId.toLowerCase() : lookupId;
+    let account = await User.findOne({ $or: [{ email: emailSearch }, { userId: lookupId }] }).lean();
+    if (!account) account = await Admin.findOne({ $or: [{ email: emailSearch }, { adminId: lookupId }] }).lean();
+    
+    if (!account) return res.status(404).json({ success: false, message: "Account not found" });
+    const targetEmail = account.email;
+
+    const record = await Otp.findOne({ email: targetEmail }).select("otp createdAt").lean();
     if (!record) {
       return res.status(400).json({ success: false, message: "OTP not found or expired" });
     }
 
     if (Date.now() - record.createdAt > OTP_EXPIRY) {
-      await Otp.deleteOne({ email });
+      await Otp.deleteOne({ email: targetEmail });
       return res.status(400).json({ success: false, message: "OTP has expired" });
     }
 
-    if (parseInt(otp) !== record.otp) {
+    // 🔥 SECURITY FIX: Compare incoming OTP with hashed OTP
+    const isMatch = await bcrypt.compare(otp.toString(), record.otp);
+    if (!isMatch) {
       return res.status(400).json({ success: false, message: "Invalid OTP" });
     }
 
@@ -715,25 +856,19 @@ exports.forgotPasswordVerifyOtp = async (req, res) => {
 /* ================= RESET PASSWORD ================= */
 exports.resetPassword = async (req, res) => {
   try {
-    const { email, otp, newPassword } = req.body;
+    const { email, identifier, otp, newPassword } = req.body;
+    const lookupId = (identifier || email || "").trim();
 
-    if (!email || !otp || !newPassword) {
-      return res.status(400).json({ success: false, message: "Email, OTP, and new password are required" });
+    if (!lookupId || !otp || !newPassword) {
+      return res.status(400).json({ success: false, message: "Identifier, OTP, and new password are required" });
     }
 
-    // 🔥 OPTIMIZED: Added .select("otp")
-    const record = await Otp.findOne({ email }).select("otp").lean();
-    if (!record || parseInt(otp) !== record.otp) {
-      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
-    }
-
-    // 🔥 FIX: Find the account in either collection
-    // ⚠️ NO LEAN HERE: We need the full Mongoose object to call account.save() below
-    let account = await User.findOne({ email });
+    const emailSearch = lookupId.includes("@") ? lookupId.toLowerCase() : lookupId;
+    let account = await User.findOne({ $or: [{ email: emailSearch }, { userId: lookupId }] });
     let role = "user";
 
     if (!account) {
-      account = await Admin.findOne({ email });
+      account = await Admin.findOne({ $or: [{ email: emailSearch }, { adminId: lookupId }] });
       role = "admin";
     }
 
@@ -741,13 +876,25 @@ exports.resetPassword = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
+    const targetEmail = account.email;
+
+    const record = await Otp.findOne({ email: targetEmail }).select("otp").lean();
+    if (!record) {
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    // 🔥 SECURITY FIX: Compare incoming OTP with hashed OTP
+    const isMatch = await bcrypt.compare(otp.toString(), record.otp);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    }
+
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     account.password = hashedPassword;
     await account.save();
 
-    // 🔥 FIX: Adjusted logging to handle Admin vs User IDs properly
     const logData = {
-      email: account.email, 
+      email: targetEmail, 
       action: "password_reset",
       category: "security",
       details: `${role === 'admin' ? 'Admin' : 'User'} successfully reset their password via email OTP`,
@@ -763,11 +910,11 @@ exports.resetPassword = async (req, res) => {
 
     await logActivity(logData);
 
-    await Otp.deleteOne({ email });
+    await Otp.deleteOne({ email: targetEmail });
 
     await transporter.sendMail({
       from: `"UBA Auth" <${process.env.EMAIL_USER}>`,
-      to: email,
+      to: targetEmail,
       subject: "Password Reset Successful",
       html: generateAuthEmail("SUCCESS"), 
     });
@@ -785,8 +932,6 @@ exports.changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
-    // 🔥 FIX: Fetch user or admin with password
-    // ⚠️ NO LEAN HERE: We need the full Mongoose object to call account.save() below
     let account = await User.findById(req.user.userId).select("+password");
     let role = "user";
 
@@ -799,40 +944,31 @@ exports.changePassword = async (req, res) => {
       return res.status(404).json({ message: "Account not found" });
     }
 
-    // ================= Verify current password =================
     const match = await bcrypt.compare(currentPassword, account.password);
     if (!match) {
       return res.status(400).json({ message: "Incorrect current password" });
     }
 
-    // ================= Prevent using the same password =================
     const isSame = await bcrypt.compare(newPassword, account.password);
     if (isSame) {
       return res.status(400).json({ message: "New password must be different from current password" });
     } 
 
-    // ================= Backend password strength validation =================
     const strongPasswordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&]).{8,}$/;
     if (!strongPasswordRegex.test(newPassword)) {
       return res.status(400).json({ message: "Password must be at least 8 characters and include a letter, number, and special character." });
     }
 
-    // ================= Hash and save new password =================
     account.password = await bcrypt.hash(newPassword, 10);
     await account.save();
 
-    // ================= Logging without sensitive info =================
-    const safeReq = { ...req, body: { ...req.body } }; 
-    delete safeReq.body.currentPassword; 
-    delete safeReq.body.newPassword;     
-
-    // 🔥 FIX: Adjusted logging for Change Password
+    // 🔥 THE FIX: Pass the raw `req` object directly to the logger! 
     const logData = {
       email: account.email, 
       action: "password_change",
       category: "security",
       details: `${role === 'admin' ? 'Admin' : 'User'} successfully changed their password from settings`,
-      req: safeReq,
+      req: req, // ✅ Correctly passes the entire raw request
       role: role
     };
 
@@ -844,7 +980,6 @@ exports.changePassword = async (req, res) => {
 
     await logActivity(logData);
 
-    // ================= Success Response =================
     res.status(200).json({ message: "Password updated successfully" });
   } catch (error) {
     console.error("Change Password Error:", error);
@@ -854,10 +989,8 @@ exports.changePassword = async (req, res) => {
 
 //* ================= NOTIFICATIONS ================= *//
 
-// Get unread notifications for the logged-in user (works for both user and admin)
 exports.getMyNotifications = async (req, res) => {
   try {
-    // ✅ OPTIMIZED: Added .lean()
     const notifications = await Notification.find({
       user: req.user.userId,
       read: false,
@@ -869,7 +1002,6 @@ exports.getMyNotifications = async (req, res) => {
   }
 };
 
-// Mark a single notification as read
 exports.markAsRead = async (req, res) => {
   try {
     await Notification.findOneAndUpdate(
@@ -883,7 +1015,6 @@ exports.markAsRead = async (req, res) => {
   }
 };
 
-// Mark all notifications as read
 exports.markAllAsRead = async (req, res) => {
   try {
     await Notification.updateMany(
@@ -903,7 +1034,6 @@ exports.submitContactForm = async (req, res) => {
   try {
     const { name, email, message } = req.body;
 
-    // 1. Backend validation
     if (!name || !email || !message) {
       return res.status(400).json({ 
         success: false, 
@@ -911,7 +1041,11 @@ exports.submitContactForm = async (req, res) => {
       });
     }
 
-    // 2. Save to database
+    // 🔥 INDUSTRY STANDARD: Email Validation
+    if (!validator.isEmail(email.trim())) {
+      return res.status(400).json({ success: false, message: 'Invalid email format' });
+    }
+
     const newContactMessage = new Contact({
       name,
       email,
@@ -920,33 +1054,26 @@ exports.submitContactForm = async (req, res) => {
 
     await newContactMessage.save();
 
-    // 3. Set up Nodemailer Transporter
-    // Make sure to add EMAIL_USER and EMAIL_PASS to your .env file
     const transporter = nodemailer.createTransport({
-      service: 'gmail', // You can change this to 'smtp.mailtrap.io', 'sendgrid', etc.
+      service: 'gmail', 
       auth: {
         user: process.env.EMAIL_USER, 
-        pass: process.env.EMAIL_PASS, // If using Gmail, use an App Password here
+        pass: process.env.EMAIL_PASS, 
       },
     });
 
-    // 4. Configure the Email Options
     const mailOptions = {
-      from: process.env.EMAIL_USER, // The authenticated email address
-      to: process.env.EMAIL_USER,   // <-- UPDATED: Now sends directly to your EMAIL_USER account
+      from: process.env.EMAIL_USER, 
+      to: process.env.EMAIL_USER,   
       subject: `New Contact Form Submission from ${name}`,
       html: ContactEmail(name, email, message),
-      replyTo: email // Allows you to hit "Reply" and email the user directly
+      replyTo: email 
     };
 
-    // 5. Send the Email
-    // We don't await this directly so it doesn't block the response to the user.
-    // We'll let it run in the background and just log if it fails.
     transporter.sendMail(mailOptions).catch(err => {
       console.error('Failed to send admin notification email:', err);
     });
 
-    // 6. Success response to frontend
     res.status(201).json({
       success: true,
       message: 'Message sent successfully!',
@@ -971,7 +1098,6 @@ exports.getPublicAlertDetails = async (req, res) => {
     const { id } = req.query;
     if (!id) return res.status(400).json({ message: "Alert ID missing" });
 
-    // 1. Check UserLog first
     let log = await UserLog.findById(id)
       .select("user device location createdAt details")
       .populate("user", "firstName lastName email")
@@ -979,7 +1105,6 @@ exports.getPublicAlertDetails = async (req, res) => {
 
     let role = "user";
 
-    // 2. If not found, check AdminLog
     if (!log) {
       log = await AdminLog.findById(id)
         .select("admin device location createdAt details")
@@ -988,10 +1113,8 @@ exports.getPublicAlertDetails = async (req, res) => {
       role = "admin";
     }
 
-    // 3. Now throw the 404 if it's in NEITHER collection
     if (!log) return res.status(404).json({ message: "Security log not found" });
 
-    // Normalize the account object so the frontend gets the exact same data structure
     const account = role === "admin" ? log.admin : log.user;
 
     res.status(200).json({
@@ -1012,10 +1135,8 @@ exports.acknowledgePublicAlert = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Attempt to update UserLog first
     let updated = await UserLog.findByIdAndUpdate(id, { status: "acknowledged" });
     
-    // If it wasn't a UserLog, update AdminLog
     if (!updated) {
       updated = await AdminLog.findByIdAndUpdate(id, { status: "acknowledged" });
     }
@@ -1033,14 +1154,12 @@ exports.securePublicAccount = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Check UserLog
     const userLog = await UserLog.findById(id).select("user").lean();
     if (userLog && userLog.user) {
        await Session.deleteMany({ user: userLog.user });
        return res.status(200).json({ message: "User account secured successfully" });
     }
     
-    // Check AdminLog
     const adminLog = await AdminLog.findById(id).select("admin").lean();
     if (adminLog && adminLog.admin) {
        await AdminSession.deleteMany({ admin: adminLog.admin });

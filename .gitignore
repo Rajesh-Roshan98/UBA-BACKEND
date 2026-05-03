@@ -1,39 +1,64 @@
-# 1. Environment variables & Secrets
+# ==============================
+# 1. Environment Variables & Secrets
+# ==============================
 .env
 .env.*
+!.env.example
+
+# ==============================
+# 2. Sensitive Scripts / Seeds
+# ==============================
 scripts/admin.json
 scripts/admin-seed.json
 
-# 1. Environment variables & Secrets
-UBA-BACKEND/scripts/admin.json
-UBA-BACKEND/scripts/admin-seed.json
+# ==============================
+# 3. Node Modules
+# ==============================
+node_modules/
 
-# 2. Raw datasets (Large + Sensitive)
-raw/
-UBA-BACKEND/ml/data/raw/
+# ==============================
+# 4. Logs
+# ==============================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# 3. Processed ML data
-UBA-BACKEND/ml/data/processed/
-UBA-BACKEND/ml/data/front/processed/
+# ==============================
+# 5. OS / System Files
+# ==============================
+.DS_Store
+Thumbs.db
 
-# 4. ML models & locks
+# ==============================
+# 6. Uploads & Temp Files
+# ==============================
+uploads/
+temp_uploads/
+
+# ==============================
+# 7. ML - RAW & PROCESSED DATA (VERY IMPORTANT)
+# ==============================
+ml/data/raw/
+ml/data/processed/
+ml/data/front/processed/
+
+# ==============================
+# 8. ML Models (Heavy files)
+# ==============================
+ml/models/
 *.pkl
 *.lock
 
-# 5. Python garbage/cache files
+# ==============================
+# 9. Python Cache / Garbage
+# ==============================
 __pycache__/
 *.pyc
 
-# 6. User Uploads & Temp files
-UBA-BACKEND/temp_uploads/
-UBA-BACKEND/uploads/
-
-# 7. Node modules
-node_modules/
-
-# 8. Logs
-*.log
-
-# 9. OS files
-.DS_Store
-Thumbs.db
+# ==============================
+# 10. Optional (Good Practice)
+# ==============================
+coverage/
+dist/
+build/

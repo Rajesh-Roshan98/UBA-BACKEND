@@ -1,10 +1,11 @@
 const User = require("../models/userModel");
-const Session = require("../models/sessionModel"); // 🔥 NEW: Imported your Session model
-const Admin = require("../models/adminModel"); // 🔥 NEW: Import Admin model
-const AdminSession = require("../models/adminSession"); // 🔥 NEW: Import Admin Session model
+const Session = require("../models/sessionModel"); 
+const Admin = require("../models/adminModel"); 
+const AdminSession = require("../models/adminSession"); 
 const AdminLog = require("../models/adminLog");
 const UserLog = require("../models/userLog");
 const validator = require("validator");
+const bcrypt = require("bcrypt"); // 🔥 NEW: Added for password verification
 
 // 🔥 NEW: Import the reusable logger
 const { logActivity } = require("../utils/logger");
@@ -59,41 +60,75 @@ exports.updateAccount = async (req, res) => {
   try {
     const { fname, email, phone } = req.body;
     const updateData = {};
-    let emailChanged = false; // 🔥 Track if email was specifically changed
+    let emailChanged = false; 
+    let nameChanged = false; // 🔥 Track if name was specifically changed
 
     // --- Validation ---
-    if (email && !validator.isEmail(email)) {
-      return res.status(400).json({ message: "Invalid email format" });
+    if (email !== undefined) {
+      const trimmedEmail = email.trim();
+      if (trimmedEmail === "") {
+        return res.status(400).json({ message: "Email cannot be empty" });
+      }
+      if (!validator.isEmail(trimmedEmail)) {
+        return res.status(400).json({ message: "Invalid email format" });
+      }
+      req.body.email = trimmedEmail; // Update the variable for downstream logic
     }
-    if (phone && !validator.isMobilePhone(phone, "any")) {
-      return res.status(400).json({ message: "Invalid phone number" });
+
+    if (phone !== undefined) {
+      const trimmedPhone = phone.trim();
+      if (trimmedPhone === "") {
+        return res.status(400).json({ message: "Phone number cannot be empty" });
+      }
+      
+      // 🔥 INDUSTRY STANDARD: Enforce exactly 10 digits using Regex
+      const phoneRegex = /^\d{10}$/; 
+      if (!phoneRegex.test(trimmedPhone)) {
+        return res.status(400).json({ message: "Phone number must be exactly 10 digits" });
+      }
+      
+      updateData.phone = trimmedPhone;
     }
     
     // Safely split the React "fname" back into the DB's required firstName/lastName
     if (fname !== undefined) {
-      const nameParts = fname.trim().split(/\s+/);
-      updateData.firstName = nameParts[0] || '';
+      const trimmedName = fname.trim();
+      
+      // 🔥 INDUSTRY STANDARD: Min 2 chars, Max 50 chars
+      if (trimmedName === "") {
+        return res.status(400).json({ message: "Full name cannot be empty" });
+      }
+      if (trimmedName.length < 2) {
+        return res.status(400).json({ message: "Full name must be at least 2 characters long" });
+      }
+      if (trimmedName.length > 50) {
+        return res.status(400).json({ message: "Full name cannot exceed 50 characters" });
+      }
+
+      const nameParts = trimmedName.split(/\s+/);
+      updateData.firstName = nameParts[0]; 
+      updateData.middleName = ''; // 🔥 Prevent stale middle names from persisting
+      
       if (nameParts.length > 1) {
         updateData.lastName = nameParts.slice(1).join(' ');
-      } // preserve lastName if only first name provided
-    }
-
-    if (phone !== undefined) {
-      updateData.phone = phone;
+      } else {
+        updateData.lastName = ''; // 🔥 Allow user to delete their last name
+      }
+      nameChanged = true;
     }
 
     // ==========================================
     // 🔥 NEW: INJECTED ADMIN LOGIC
     // ==========================================
     if (req.user && req.user.role === "admin") {
-      if (email !== undefined) {
+      if (req.body.email !== undefined) {
         // ✅ OPTIMIZED: Added .lean()
         const currentAdmin = await Admin.findById(req.user.userId).select('email').lean();
-        if (email !== currentAdmin.email) {
-          updateData.email = email;
+        if (req.body.email !== currentAdmin.email) {
+          updateData.email = req.body.email;
           emailChanged = true;
         } else {
-          updateData.email = email;
+          updateData.email = req.body.email;
         }
       }
 
@@ -105,10 +140,15 @@ exports.updateAccount = async (req, res) => {
       ).select('-password').lean();
 
       let logDetailsMessage = "Admin updated their general account information";
-      if (emailChanged) { logDetailsMessage = `Admin changed their email address to ${email}`; }
+      if (emailChanged) { 
+        logDetailsMessage = `Admin changed their email address to ${req.body.email}`; 
+      } else if (nameChanged) {
+        logDetailsMessage = `Admin updated their full name to ${fname}`;
+      }
 
       await logActivity({
         adminId: req.user.userId,
+        email: updatedAdmin.email, // 🔥 THE FIX: explicitly passing email from the DB result
         role: "admin",
         action: emailChanged ? "email_change" : "account_update", 
         category: "settings",
@@ -121,15 +161,15 @@ exports.updateAccount = async (req, res) => {
     // ==========================================
 
     // Check if email is changing to reset verification status
-    if (email !== undefined) {
+    if (req.body.email !== undefined) {
       // ✅ OPTIMIZED: Added .lean()
       const currentUser = await User.findById(req.user.userId).select('email').lean();
-      if (email !== currentUser.email) {
-        updateData.email = email;
+      if (req.body.email !== currentUser.email) {
+        updateData.email = req.body.email;
         updateData.isEmailVerified = false;
         emailChanged = true; // 🔥 Mark that the email was actually changed
       } else {
-        updateData.email = email;
+        updateData.email = req.body.email;
       }
     }
 
@@ -148,12 +188,15 @@ exports.updateAccount = async (req, res) => {
     // 🔥 Make the log details dynamic!
     let logDetailsMessage = "User updated their general account information";
     if (emailChanged) {
-      logDetailsMessage = `User changed their email address to ${email}`;
+      logDetailsMessage = `User changed their email address to ${req.body.email}`;
+    } else if (nameChanged) {
+      logDetailsMessage = `User updated their full name to ${fname}`;
     }
 
     // 🔥 LOGGING
     await logActivity({
       userId: req.user.userId,
+      email: updatedUser.email, // 🔥 THE FIX: explicitly passing email from the DB result
       action: emailChanged ? "email_change" : "account_update", // Change the action tag too!
       category: "settings",
       details: logDetailsMessage,
@@ -171,10 +214,22 @@ exports.updateAccount = async (req, res) => {
 // @access  Private
 exports.deleteAccount = async (req, res) => {
   try {
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ message: "Password is required to delete your account." });
+    }
+
     // ==========================================
     // 🔥 NEW: INJECTED ADMIN LOGIC
     // ==========================================
     if (req.user && req.user.role === "admin") {
+      const admin = await Admin.findById(req.user.userId).select("+password");
+      if (!admin) return res.status(404).json({ message: "Admin not found" });
+
+      const isMatch = await bcrypt.compare(password, admin.password);
+      if (!isMatch) return res.status(401).json({ message: "Incorrect password. Account deletion failed." });
+
       // Delete admin logs and sessions first
       await AdminLog.deleteMany({ admin: req.user.userId });
       await AdminSession.deleteMany({ admin: req.user.userId });
@@ -186,6 +241,12 @@ exports.deleteAccount = async (req, res) => {
       return res.json({ message: 'Admin account deleted successfully' });
     }
     // ==========================================
+
+    const user = await User.findById(req.user.userId).select("+password");
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(401).json({ message: "Incorrect password. Account deletion failed." });
 
     // Delete user logs and sessions first
     await UserLog.deleteMany({ user: req.user.userId });
@@ -306,8 +367,13 @@ exports.deleteSession = async (req, res) => {
       if (!deletedAdminSession) {
         return res.status(404).json({ message: "Admin session not found or already logged out" });
       }
+      
+      // 🔥 THE FIX: Look up admin email for logging
+      const admin = await Admin.findById(userId).select('email').lean();
+
       await logActivity({
         adminId: userId,
+        email: admin?.email, // 🔥 THE FIX: explicitly passing email
         role: "admin",
         action: "session_logout",
         category: "security",
@@ -328,9 +394,13 @@ exports.deleteSession = async (req, res) => {
       return res.status(404).json({ message: "Session not found or already logged out" });
     }
 
+    // 🔥 THE FIX: Look up user email for logging
+    const user = await User.findById(userId).select('email').lean();
+
     // 🔥 LOGGING 
     await logActivity({
       userId: userId,
+      email: user?.email, // 🔥 THE FIX: explicitly passing email
       action: "session_logout",
       category: "security",
       details: "User manually logged out of a specific device",
@@ -366,8 +436,13 @@ exports.deleteAllOtherSessions = async (req, res) => {
     // ==========================================
     if (req.user && req.user.role === "admin") {
       await AdminSession.deleteMany({ admin: userId, token: { $ne: currentToken } });
+      
+      // 🔥 THE FIX: Look up admin email for logging
+      const admin = await Admin.findById(userId).select('email').lean();
+
       await logActivity({
         adminId: userId,
+        email: admin?.email, // 🔥 THE FIX: explicitly passing email
         role: "admin",
         action: "session_logout_all",
         category: "security",
@@ -384,9 +459,13 @@ exports.deleteAllOtherSessions = async (req, res) => {
       token: { $ne: currentToken } 
     });
 
+    // 🔥 THE FIX: Look up user email for logging
+    const user = await User.findById(userId).select('email').lean();
+
     // 🔥 LOGGING 
     await logActivity({
       userId: userId,
+      email: user?.email, // 🔥 THE FIX: explicitly passing email
       action: "session_logout_all",
       category: "security",
       details: "User logged out of all other devices",

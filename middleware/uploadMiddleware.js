@@ -1,85 +1,63 @@
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+
+// Configure Cloudinary with your .env credentials
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 /* =========================================================
-   1. DIRECTORY SETUP
+   1. AVATAR UPLOAD CONFIGURATION (Images Only, 1MB Limit -> Cloudinary)
 ========================================================= */
 
-// Ensure the avatar upload directory exists
-const avatarUploadDir = 'uploads/avatars'; 
-if (!fs.existsSync(avatarUploadDir)) {
-  fs.mkdirSync(avatarUploadDir, { recursive: true });
-}
-
-// Ensure the temp directory exists when the server starts
-const tempDir = path.join(__dirname, '../temp_uploads');
-if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
-}
-
-/* =========================================================
-   2. AVATAR UPLOAD CONFIGURATION (Images Only, 1MB Limit)
-========================================================= */
-
-const avatarStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, avatarUploadDir); 
-  },
-  filename: function (req, file, cb) {
-    // Creates a unique filename: userId-timestamp.extension
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, `user-${req.user.userId}-${uniqueSuffix}${path.extname(file.originalname)}`);
+// Swapped diskStorage for CloudinaryStorage
+const avatarStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'uba_avatars',
+    resource_type: 'image', // ✅ FIX 3: Prevents non-image uploads at the Cloudinary API level
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
+    transformation: [
+      { width: 500, height: 500, crop: 'limit' },
+      { quality: 'auto', fetch_format: 'auto' } // Cloudinary Auto-Optimization
+    ],
+    // Keeps your exact filename naming convention with safety check
+    public_id: (req, file) => {
+      const userId = req.user?.userId || 'guest';
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      return `user-${userId}-${uniqueSuffix}`;
+    }
   }
 });
 
-// Filter for images only
+// Strict MIME type validation (Prevents spoofed files)
 const avatarFileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/')) {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+  
+  if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
     cb(new Error('Invalid file type. Only JPG, PNG, and GIF are allowed.'), false);
   }
 };
 
-// Initialize Avatar Multer
+// Initialize Avatar Multer 
 const uploadAvatar = multer({
   storage: avatarStorage,
   limits: {
-    fileSize: 1024 * 1024 // 1MB limit (matches your UI text)
+    fileSize: 1024 * 1024, // 1MB limit 
+    files: 1               // Prevents multiple files from being uploaded at once
   },
   fileFilter: avatarFileFilter
 });
 
 /* =========================================================
-   3. TEMP FILE UPLOAD CONFIGURATION (Unrestricted, All Files)
-========================================================= */
-
-// Configure Disk Storage (CRITICAL FOR 100GB FILES)
-const tempStorage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        // Stream the file directly to the temp folder
-        cb(null, tempDir);
-    },
-    filename: function (req, file, cb) {
-        // Add a timestamp to the filename to prevent overwriting if two files have the same name
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + '-' + file.originalname);
-    }
-});
-
-// Initialize Temp File Multer
-const uploadTempFile = multer({ 
-    storage: tempStorage,
-    // Note: We are deliberately NOT setting a 'limits: { fileSize: ... }' here 
-    // so that it allows unrestricted file sizes (up to your OS/Disk limits).
-});
-
-/* =========================================================
-   4. EXPORTS
+   2. EXPORTS
 ========================================================= */
 
 module.exports = {
-    uploadAvatar,
-    uploadTempFile
+    uploadAvatar
 };

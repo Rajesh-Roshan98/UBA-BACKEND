@@ -9,7 +9,7 @@ const otpSchema = new mongoose.Schema(
       index: true, // 🔥 ADDED: Fast lookup when verifying or deleting OTPs for a specific user
     },
     otp: {
-      type: Number, // numeric OTP
+      type: String, // 🔥 FIX: Changed from Number to String to safely store the bcrypt hash
       required: true, 
     },
     createdAt: {

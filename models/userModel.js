@@ -2,18 +2,27 @@ const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema(
   {
+    userId: {
+      type: String,
+      unique: true,
+      required: true,
+      index: true, // 🔥 ADDED: Fast lookup by userId
+    },
     firstName: {
       type: String,
       required: [true, "First Name is Required"],
+      minlength: [2, "First name must be at least 2 characters"],
+      maxlength: [50, "First name cannot exceed 50 characters"], 
       trim: true,
     },
     middleName: {
       type: String,
+      maxlength: [50, "Middle name cannot exceed 50 characters"],
       trim: true,
     },
     lastName: {
       type: String,
-      required: [true, "Last Name is Required"],
+      maxlength: [50, "Last name cannot exceed 50 characters"],
       trim: true,
     },
     email: {
@@ -26,6 +35,7 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
+      required: true,
       select: false, 
     },
 
@@ -62,7 +72,8 @@ const userSchema = new mongoose.Schema(
     },
     phone: { 
       type: String, 
-      default: "" 
+      default: "",
+      match: [/(^\d{10}$)|^$/, "Phone number must be exactly 10 digits"]
     },
     location: { 
       type: String, 

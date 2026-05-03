@@ -6,6 +6,13 @@ const cors = require("cors");
 const UAParser = require("ua-parser-js");
 const cookieParser = require('cookie-parser');
 const compression = require("compression"); // 🔥 NEW: Import compression for payload optimization
+const helmet = require("helmet"); // 🔥 FIX 3: Import helmet for security headers
+
+const http = require("http"); // 🔥 NEW: Import http for Socket.io
+const { initSocket } = require("./utils/socketConfig"); // 🔥 NEW: Import socket configuration
+
+// 🔥 NEW: Import your rate limiters and initializer
+const { initRedisLimiter, globalLimiter } = require("./middleware/rateLimiter"); // Adjust path if necessary
 
 const dbConnect = require("./config/dbConnect");
 const authRouter = require("./routes/authRoutes");
@@ -15,6 +22,15 @@ const userRoutes = require("./routes/userRoutes");
 const mlHealthCheck = require("./utils/mlHealthCheck");
 
 const app = express();
+const server = http.createServer(app); // 🔥 NEW: Wrap express in HTTP server
+
+// 🔥 NEW: Trust reverse proxy (e.g., Vite, Nginx, Vercel) to ensure req.ip accurately reflects the user, not the proxy
+app.set("trust proxy", 1);
+
+// 🔥 THE FIX: Apply helmet with Cross-Origin Policy to allow frontend to load avatars
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 
 /* ---------- CORS (AuthContext Support) ---------- */
 // 🔥 NEW: Read allowed origins dynamically from your .env file
@@ -50,7 +66,8 @@ app.use(
 app.use(compression());
 
 /* ---------- BODY PARSER ---------- */
-app.use(express.json());
+// 🔥 FIX 2: Added 10kb payload limit to prevent DoS attacks via massive JSON payloads
+app.use(express.json({ limit: "10kb" }));
 app.use(cookieParser());
 
 // ✅ PERFORMANCE IMPROVEMENTS:
@@ -113,6 +130,7 @@ app.use((req, res, next) => {
 });
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 /* ---------- BASIC ROUTES ---------- */
 app.get("/favicon.ico", (_, res) => res.sendStatus(204));
 
@@ -140,32 +158,84 @@ app.get("/health", (_, res) => {
 });
 
 /* ---------- ROUTES ---------- */
-app.use("/api/v1", authRouter); 
-app.use("/api/uba", ubaRoutes);
-app.use("/api/admin", adminRoutes);
-app.use("/api/user", userRoutes);
+// 🔥 NEW: Apply the global rate limiter as a fallback for all API routes
+app.use("/api", globalLimiter);
+
+app.use("/api/v1/auth", authRouter); 
+app.use("/api/v1/uba", ubaRoutes);
+app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/user", userRoutes);
+
+// 🔥 FIX 4: Global Error Handling Middleware (Catches unhandled errors gracefully)
+app.use((err, req, res, next) => {
+  console.error("Global Error Caught:", err);
+  res.status(500).json({
+    success: false,
+    message: "Internal Server Error"
+  });
+});
 
 /* ---------- SERVER START ---------- */
 if (require.main === module) {
-  dbConnect()
-    .then(async () => {
-      try {
-        await mlHealthCheck();
-      } catch {
-        console.error("🚨 ML is NOT ready.");
-      }
+  // 🔥 FIX: Wrap startup in an async function to guarantee Redis connects first
+  const startServer = async () => {
+    try {
+      // 1. Wait for Redis Limiter to initialize
+      await initRedisLimiter();
+      console.log("✅ Rate limiters initialized.");
+    } catch (err) {
+      console.error("❌ Failed to initialize rate limiters:", err);
+    }
 
-      const PORT = process.env.PORT || 3000;
-      app.listen(PORT, "0.0.0.0", () => {
-        console.log(`🚀 Server running on port ${PORT}`);
-        // 🔥 Added some helpful terminal logs so you can click them easily!
-        console.log(`➜  Local:   http://localhost:${PORT}`);
-        console.log(`➜  Network: http://10.186.34.199:${PORT} (or your current LAN IP)`);
+    // 2. Connect to the database and start the server ONLY after Redis is ready
+    dbConnect()
+      .then(async () => {
+        try {
+          await mlHealthCheck();
+        } catch {
+          console.error("🚨 ML is NOT ready.");
+        }
+
+        const PORT = process.env.PORT || 3000;
+        
+        // 🔥 INDUSTRY STANDARD FIX: Initialize Socket.io only AFTER the database is fully connected
+        initSocket(server); 
+
+        // 🔥 THE FIX: Changed app.listen to server.listen so Socket.io works properly
+        server.listen(PORT, "0.0.0.0", () => {
+          console.log(`🚀 Server running on port ${PORT}`);
+          // 🔥 Added some helpful terminal logs so you can click them easily!
+          console.log(`➜  Local:   http://localhost:${PORT}`);
+          console.log(`➜  Network: http://10.213.153.199:${PORT} (or your current LAN IP)`);
+        });
+      })
+      .catch((err) => {
+        console.error("❌ DB Connection Error", err);
       });
-    })
-    .catch((err) => {
-      console.error("❌ DB Connection Error", err);
-    });
+  };
+
+  startServer();
 }
+
+// 🔥 TRUE GRACEFUL SHUTDOWN
+process.on("SIGINT", async () => {
+  console.log("🛑 Server shutting down gracefully...");
+
+  try {
+    // 1. Close MongoDB connection cleanly
+    await mongoose.connection.close();
+    console.log("✅ MongoDB disconnected");
+
+    // 2. Stop accepting new HTTP/Socket requests and allow current ones to finish
+    server.close(() => {
+      console.log("✅ HTTP server closed");
+      process.exit(0);
+    });
+
+  } catch (err) {
+    console.error("❌ Shutdown error:", err);
+    process.exit(1);
+  }
+});
 
 module.exports = app;

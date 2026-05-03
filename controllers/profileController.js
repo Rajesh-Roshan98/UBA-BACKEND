@@ -1,8 +1,29 @@
 const User = require("../models/userModel");
-const Admin = require("../models/adminModel"); // 🔥 NEW: Imported the Admin model
-const fs = require('fs');
-const path = require('path');
+const Admin = require("../models/adminModel");
 const { logActivity } = require("../utils/logger");
+const cloudinary = require('cloudinary').v2; // 🔥 NEW: Imported Cloudinary for image deletion
+
+/* ================= HELPER FUNCTIONS ================= */
+const sanitizeProfile = (data, defaultChar) => {
+  if (!data.avatar || data.avatar === 'null' || data.avatar === 'undefined' || data.avatar.trim() === '') {
+    data.avatar = "";
+  }
+
+  if (data.location === undefined || data.location === null) {
+    data.location = "";
+  }
+
+  if (data.name && (!data.firstName || !data.lastName)) {
+    const parts = data.name.trim().split(/\s+/);
+    data.firstName = parts[0] || defaultChar;
+    data.lastName = parts.length > 1 ? parts.slice(1).join(' ') : defaultChar;
+  } else if (!data.firstName) {
+    data.firstName = defaultChar;
+    data.lastName = defaultChar;
+  }
+
+  return data;
+};
 
 /* ================= GET PROFILE ================= */
 exports.getProfile = async (req, res) => {
@@ -17,22 +38,7 @@ exports.getProfile = async (req, res) => {
         return res.status(404).json({ success: false, message: "Admin not found" });
       }
 
-      if (!admin.avatar || admin.avatar === 'null' || admin.avatar === 'undefined' || admin.avatar.trim() === '') {
-        admin.avatar = "";
-      }
-
-      if (admin.location === undefined || admin.location === null) {
-        admin.location = "";
-      }
-
-      if (admin.name && (!admin.firstName || !admin.lastName)) {
-        const nameParts = admin.name.trim().split(/\s+/);
-        admin.firstName = nameParts[0] || "A";
-        admin.lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : "A";
-      } else if (!admin.firstName) {
-        admin.firstName = "A";
-        admin.lastName = "A";
-      }
+      admin = sanitizeProfile(admin, "A"); // ✅ FIX 4: Reusable cleaner helper
 
       return res.status(200).json({ success: true, profile: admin });
     }
@@ -49,25 +55,7 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    // Sanitize avatar string for frontend initials trigger
-    if (!user.avatar || user.avatar === 'null' || user.avatar === 'undefined' || user.avatar.trim() === '') {
-      user.avatar = "";
-    }
-
-    // ✅ FIX: Ensure location is strictly preserved (captures "unknown" vs "")
-    if (user.location === undefined || user.location === null) {
-      user.location = "";
-    }
-
-    // Extract names if only a single 'name' field exists in the document
-    if (user.name && (!user.firstName || !user.lastName)) {
-      const nameParts = user.name.trim().split(/\s+/);
-      user.firstName = nameParts[0] || "U";
-      user.lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : "U";
-    } else if (!user.firstName) {
-      user.firstName = "U";
-      user.lastName = "U";
-    }
+    user = sanitizeProfile(user, "U"); // ✅ FIX 4: Reusable cleaner helper
 
     return res.status(200).json({ 
       success: true, 
@@ -98,13 +86,24 @@ exports.updateProfile = async (req, res) => {
 
     const userId = req.user.userId;
 
+    // ✅ FIX 3: Dynamic update fields to prevent overwriting with undefined
+    const updateFields = {};
+    if (name !== undefined) updateFields.name = name;
+    if (phone !== undefined) updateFields.phone = phone;
+    if (location !== undefined) updateFields.location = location;
+    if (bio !== undefined) updateFields.bio = bio;
+    if (jobTitle !== undefined) updateFields.jobTitle = jobTitle;
+    if (company !== undefined) updateFields.company = company;
+    if (website !== undefined) updateFields.website = website;
+    if (skills !== undefined) updateFields.skills = skills;
+
     // ==========================================
     // 🔥 NEW: INJECTED ADMIN UPDATE PROFILE LOGIC
     // ==========================================
     if (req.user && req.user.role === "admin") {
       let updatedAdmin = await Admin.findByIdAndUpdate(
         userId,
-        { $set: { name, phone, location, bio, jobTitle, company, website, skills } },
+        { $set: updateFields },
         { new: true, runValidators: true }
       ).select("-password").lean();
 
@@ -112,24 +111,12 @@ exports.updateProfile = async (req, res) => {
         return res.status(404).json({ success: false, message: "Admin not found" });
       }
 
-      if (!updatedAdmin.avatar || updatedAdmin.avatar === 'null' || updatedAdmin.avatar === 'undefined' || updatedAdmin.avatar.trim() === '') {
-        updatedAdmin.avatar = "";
-      }
-      if (updatedAdmin.location === undefined || updatedAdmin.location === null) {
-        updatedAdmin.location = "";
-      }
-      if (updatedAdmin.name && (!updatedAdmin.firstName || !updatedAdmin.lastName)) {
-        const nameParts = updatedAdmin.name.trim().split(/\s+/);
-        updatedAdmin.firstName = nameParts[0] || "A";
-        updatedAdmin.lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : "A";
-      } else if (!updatedAdmin.firstName) {
-        updatedAdmin.firstName = "A";
-        updatedAdmin.lastName = "A";
-      }
+      updatedAdmin = sanitizeProfile(updatedAdmin, "A"); // ✅ FIX 4: Reusable cleaner helper
 
       await logActivity({
         adminId: userId,
-        role: "admin", // Ensures it triggers the AdminLog block in logger.js
+        email: updatedAdmin.email,
+        role: "admin", 
         action: "profile_update",
         category: "profile",
         details: "Admin updated their profile information",
@@ -144,18 +131,7 @@ exports.updateProfile = async (req, res) => {
 
     let updatedUser = await User.findByIdAndUpdate(
       userId,
-      {
-        $set: {
-          name, 
-          phone,
-          location,
-          bio,
-          jobTitle,
-          company,
-          website,
-          skills
-        }
-      },
+      { $set: updateFields },
       { new: true, runValidators: true }
     ).select("-password").lean();
 
@@ -166,27 +142,11 @@ exports.updateProfile = async (req, res) => {
       });
     }
 
-    // Sanitize profile data before returning
-    if (!updatedUser.avatar || updatedUser.avatar === 'null' || updatedUser.avatar === 'undefined' || updatedUser.avatar.trim() === '') {
-      updatedUser.avatar = "";
-    }
-
-    // ✅ FIX: Ensure updated location is strictly preserved
-    if (updatedUser.location === undefined || updatedUser.location === null) {
-      updatedUser.location = "";
-    }
-
-    if (updatedUser.name && (!updatedUser.firstName || !updatedUser.lastName)) {
-      const nameParts = updatedUser.name.trim().split(/\s+/);
-      updatedUser.firstName = nameParts[0] || "U";
-      updatedUser.lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : "U";
-    } else if (!updatedUser.firstName) {
-      updatedUser.firstName = "U";
-      updatedUser.lastName = "U";
-    }
+    updatedUser = sanitizeProfile(updatedUser, "U"); // ✅ FIX 4: Reusable cleaner helper
 
     await logActivity({
       userId: req.user.userId,
+      email: updatedUser.email,
       action: "profile_update",
       category: "profile",
       details: "User updated their public profile information",
@@ -214,33 +174,26 @@ exports.uploadAvatar = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Please upload a file' });
     }
 
-    if (req.file.size > 3 * 1024 * 1024) {
-      if (fs.existsSync(req.file.path)) {
-        fs.unlinkSync(req.file.path);
-      }
-      return res.status(400).json({ success: false, message: 'Image size must be less than 3MB' });
-    }
+    // ✅ FIX 1: Removed redundant size validation since Multer handles it natively
 
-    const avatarUrlPath = `/${req.file.path.replace(/\\/g, '/')}`; 
+    const avatarUrlPath = req.file.path; 
 
     // ==========================================
     // 🔥 NEW: INJECTED ADMIN UPLOAD LOGIC
     // ==========================================
     if (req.user && req.user.role === "admin") {
+      
+      // ✅ FIX 2: Delete old image from Cloudinary
       try {
-        // 🔥 OPTIMIZED: Added .select("avatar") so we only pull the string we need to delete the old file
-        const currentAdmin = await Admin.findById(req.user.userId).select("avatar").lean();
-        if (currentAdmin && currentAdmin.avatar && currentAdmin.avatar.trim() !== "") {
-          const oldImagePath = path.join(__dirname, '..', currentAdmin.avatar);
-          if (fs.existsSync(oldImagePath)) {
-            fs.unlinkSync(oldImagePath);
-          }
+        const oldAdmin = await Admin.findById(req.user.userId).select("avatar").lean();
+        if (oldAdmin?.avatar) {
+          const publicId = oldAdmin.avatar.split('/').pop().split('.')[0];
+          await cloudinary.uploader.destroy(`uba_avatars/${publicId}`);
         }
-      } catch (fsError) {
-        console.error("Failed to delete old admin avatar file:", fsError);
+      } catch (cloudErr) {
+        console.error("Cloudinary deletion error:", cloudErr);
       }
 
-      // ✅ OPTIMIZED: Added .lean()
       const updatedAdmin = await Admin.findByIdAndUpdate(
         req.user.userId,
         { avatar: avatarUrlPath },
@@ -253,7 +206,8 @@ exports.uploadAvatar = async (req, res) => {
 
       await logActivity({
         adminId: req.user.userId,
-        role: "admin", // Ensures it triggers the AdminLog block in logger.js
+        email: updatedAdmin.email,
+        role: "admin", 
         action: "avatar_update",
         category: "profile",
         details: "Admin updated their profile picture",
@@ -270,20 +224,17 @@ exports.uploadAvatar = async (req, res) => {
     // END ADMIN LOGIC INJECTION 
     // ==========================================
 
+    // ✅ FIX 2: Delete old image from Cloudinary
     try {
-      // 🔥 OPTIMIZED: Added .select("avatar") so we only pull the string we need to delete the old file
-      const currentUser = await User.findById(req.user.userId).select("avatar").lean();
-      if (currentUser && currentUser.avatar && currentUser.avatar.trim() !== "") {
-        const oldImagePath = path.join(__dirname, '..', currentUser.avatar);
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
-        }
+      const oldUser = await User.findById(req.user.userId).select("avatar").lean();
+      if (oldUser?.avatar) {
+        const publicId = oldUser.avatar.split('/').pop().split('.')[0];
+        await cloudinary.uploader.destroy(`uba_avatars/${publicId}`);
       }
-    } catch (fsError) {
-      console.error("Failed to delete old avatar file:", fsError);
+    } catch (cloudErr) {
+      console.error("Cloudinary deletion error:", cloudErr);
     }
 
-    // ✅ OPTIMIZED: Added .lean()
     const updatedUser = await User.findByIdAndUpdate(
       req.user.userId,
       { avatar: avatarUrlPath },
@@ -296,6 +247,7 @@ exports.uploadAvatar = async (req, res) => {
 
     await logActivity({
       userId: req.user.userId,
+      email: updatedUser.email,
       action: "avatar_update",
       category: "profile",
       details: "User updated their profile picture",

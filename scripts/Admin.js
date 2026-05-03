@@ -10,6 +10,14 @@ const Admin = require("../models/adminModel");
 // 🔧 Load environment variables from the parent backend folder
 require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
+// 🔥 NEW: Helper to generate 10-char alphanumeric ID
+const generateAdminId = (firstName) => {
+  const cleanName = (firstName || "Admin").replace(/[^a-zA-Z]/g, '').toUpperCase().substring(0, 5);
+  const numLength = 10 - cleanName.length;
+  const randomNums = Math.floor(Math.random() * Math.pow(10, numLength)).toString().padStart(numLength, '0');
+  return cleanName + randomNums;
+};
+
 const createAdmins = async () => { 
   try {
     // 1. Connect to the database
@@ -51,10 +59,15 @@ const createAdmins = async () => {
 
       // Hash the password securely
       const hashedPassword = await bcrypt.hash(adminData.password, 10);
+      
+      // 🔥 NEW: Generate the 10-character adminId
+      const adminFirstName = adminData.firstName || "System";
+      const generatedAdminId = generateAdminId(adminFirstName);
 
-      // 🔥 UPDATED: Create the Admin using the Admin model
+      // 🔥 UPDATED: Create the Admin using the Admin model with adminId included
       await Admin.create({
-        firstName: adminData.firstName || "System",
+        adminId: generatedAdminId, // <-- ADDED THIS LINE
+        firstName: adminFirstName,
         middleName: adminData.middleName || "",
         lastName: adminData.lastName || "Admin",
         email: adminData.email,
@@ -63,7 +76,7 @@ const createAdmins = async () => {
         isEmailVerified: true, 
       });
 
-      console.log(`🚀 Admin ${adminData.email} successfully created in the database!`);
+      console.log(`🚀 Admin ${adminData.email} (ID: ${generatedAdminId}) successfully created in the database!`);
 
       // 5. Send the credentials via Email
       console.log(`📧 Dispatching credentials to ${adminData.email}...`);
@@ -71,17 +84,18 @@ const createAdmins = async () => {
       const emailTemplate = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
           <h2 style="color: #4f46e5;">UBA System Admin Portal</h2>
-          <p>Hello ${adminData.firstName},</p>
+          <p>Hello ${adminFirstName},</p>
           <p>An administrative account has been provisioned for you on the User Behavioral Analytics platform.</p>
           
           <div style="background-color: #f3f4f6; padding: 15px; border-radius: 6px; margin: 20px 0;">
             <p style="margin: 0 0 10px 0;"><strong>Your Login Credentials:</strong></p>
+            <p style="margin: 0 0 5px 0;"><strong>Admin ID:</strong> ${generatedAdminId}</p>
             <p style="margin: 0 0 5px 0;"><strong>Email:</strong> ${adminData.email}</p>
             <p style="margin: 0;"><strong>Password:</strong> ${adminData.password}</p>
           </div>
 
           <p style="color: #dc2626; font-weight: bold; padding-left: 10px; border-left: 4px solid #dc2626;">
-            ⚠️ IMPORTANT: Please log in immediately and navigate to your profile settings to change this temporary password.
+            ⚠️ IMPORTANT: Please log in immediately using your Email or Admin ID and navigate to your profile settings to change this temporary password.
           </p>
           
           <p style="margin-top: 30px; color: #6b7280; font-size: 14px;">

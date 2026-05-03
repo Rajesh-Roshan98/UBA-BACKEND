@@ -6,8 +6,31 @@ const Session = require("../models/sessionModel"); // 🔥 NEW: Import the Sessi
 const Admin = require("../models/adminModel");
 const AdminSession = require("../models/adminSession");
 
+// 🔥 NEW: Import DB Status flag for the Circuit Breaker
+const { getDBStatus } = require("../config/dbConnect");
+
+// 🔥 IMPROVED: Helper function to catch all MongoDB network and connection errors safely
+const isDBError = (err) => {
+  return (
+    err.name === "MongoServerSelectionError" ||
+    err.name === "MongoNetworkError" ||
+    err.message?.includes("ECONNREFUSED") ||
+    err.message?.includes("ENOTFOUND")
+  );
+};
+
 exports.auth = async (req, res, next) => { 
   try {
+    // ==========================================
+    // 🔥 NEW: CIRCUIT Breaker - BLOCK IF DB IS DOWN
+    // ==========================================
+    if (!getDBStatus()) {
+      return res.status(503).json({
+        success: false,
+        message: "Service temporarily unavailable (DB disconnected)",
+      });
+    }
+
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -102,8 +125,8 @@ exports.auth = async (req, res, next) => {
 
     // 🔥 Only block unverified users for **sensitive routes**
     const PROTECTED_ROUTES = [
-      "/api/v1/someProtectedRoute1",
-      "/api/v1/someProtectedRoute2",
+      "/api/v1/auth/someProtectedRoute1",
+      "/api/v1/auth/someProtectedRoute2",
       // add all other protected routes here
     ];
 
@@ -116,9 +139,34 @@ exports.auth = async (req, res, next) => {
 
     next();
   } catch (err) {
-    return res.status(401).json({
+    // ==========================================
+    // 🔥 IMPROVED: HANDLE DATABASE NETWORK ERRORS
+    // ==========================================
+    if (isDBError(err)) {
+      console.error("❌ Database unavailable:", err.message);
+
+      return res.status(503).json({
+        success: false,
+        message: "Database unavailable. Please try again.",
+      });
+    }
+
+    // ✅ INDUSTRY STANDARD FIX: Differentiate between bad tokens and database crashes
+    if (err.name === 'TokenExpiredError' || err.name === 'JsonWebTokenError') {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired token",
+      });
+    }
+    
+    // If the error isn't a JWT error, it means the DB or server crashed while trying to verify.
+    // Return a 500 so the frontend preserves the token and shows the "Try Again" page!
+    console.error("Auth Middleware Error:", err);
+    return res.status(500).json({
       success: false,
-      message: "Invalid or expired token",
+      message: "Internal server error during authentication",
+      errorDetails: process.env.NODE_ENV === "development" ? err.message : undefined, // 🔥 IMPROVED: Hide details in production
+      errorName: err.name
     });
   }
 };
