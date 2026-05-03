@@ -39,9 +39,13 @@ temp_uploads/
 # ==============================
 # 7. ML - RAW & PROCESSED DATA (VERY IMPORTANT)
 # ==============================
-ml/data/raw/
-ml/data/processed/
-ml/data/front/processed/
+# Ignore everything inside ml/data
+ml/data/**
+
+# ❌ Allow ONLY required processed files
+!ml/data/processed/
+!ml/data/processed/uba_features.csv
+!ml/data/processed/uba_predicted.csv
 
 # ==============================
 # 8. ML Models (Heavy files)
