@@ -8,13 +8,20 @@ const userSockets = new Map(); // userId => Set of socketIds
 const initSocket = (server) => {
   const allowedOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',').map(url => url.trim().replace(/\/$/, '')) 
-    : ["http://localhost:5173"];
+    : ["http://localhost:5173", "https://cloud-uba.vercel.app"]; // 🔥 Added your Vercel URL as a safe fallback
 
   io = new Server(server, {
     cors: {
       origin: allowedOrigins,
       credentials: true
-    }
+    },
+    // 🔥 UPDATE 1: Enable Backend State Recovery to match the frontend config
+    connectionStateRecovery: {
+      maxDisconnectionDuration: 120000, // 2 minutes (matches your Axios timeout)
+    },
+    // 🔥 UPDATE 2: Tweak ping settings to prevent Render's proxy from dropping idle sockets
+    pingTimeout: 60000,
+    pingInterval: 25000
   });
 
   // 🔥 FIX 2 & 3: Industry Standard Handshake Auth & Token Expiry Handling moved to Middleware
@@ -25,10 +32,13 @@ const initSocket = (server) => {
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       
-      if (!decoded.userId) return next(new Error("Invalid token payload"));
+      // 🔥 UPDATE 3: Match the ID extraction logic from your AuthContext!
+      // This ensures admins or raw Mongo objects aren't accidentally rejected.
+      const activeUserId = decoded.userId || decoded.adminId || decoded._id;
+      
+      if (!activeUserId) return next(new Error("Invalid token payload"));
 
-      const userId = decoded.userId;
-      socket.userId = userId; // Store securely in the socket instance
+      socket.userId = activeUserId; // Store securely in the socket instance
       
       next(); // Proceed to connection
 

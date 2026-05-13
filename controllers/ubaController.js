@@ -150,14 +150,14 @@ exports.createLog = async (req, res) => {
 
     exec(cmd, async (error, stdout, stderr) => {
       if (error) {
-        console.error("Python error:", error);
-        console.error("stderr:", stderr);
+        console.error(`[🐍 PYTHON EXECUTION ERROR] Failed to run ML prediction script: ${error.message}`, error);
+        console.error(`[🐍 PYTHON STDERR] ${stderr}`);
         return res.status(500).json({ error: error.message });
       }
 
       // Log stderr to Node console so you can see the Failsafe errors or the Success Summary
       if (stderr) {
-        console.log("Python stderr:", stderr);
+        console.log(`[🐍 PYTHON STDERR LOG] ${stderr}`);
       }
 
       const prediction = stdout.trim(); // Python string output ("Normal" / "Anomaly")
@@ -242,12 +242,12 @@ exports.createLog = async (req, res) => {
 
         res.status(201).json(log);
       } catch (dbError) {
-        console.error("DB error:", dbError);
+        console.error(`[💾 DB SAVE ERROR] Failed to save ML prediction log to database: ${dbError.message}`, dbError);
         res.status(500).json({ error: dbError.message });
       }
     });
   } catch (err) {
-    console.error("Unexpected error:", err);
+    console.error(`[🚨 UBA CONTROLLER ERROR] Unexpected failure in createLog pipeline: ${err.message}`, err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -261,7 +261,7 @@ exports.getLogs = async (req, res) => {
       .lean();
     res.status(200).json(logs);
   } catch (err) {
-    console.error("Error fetching logs:", err);
+    console.error(`[📜 GET LOGS ERROR] Failed to fetch Activity Logs: ${err.message}`, err);
     res.status(500).json({ error: err.message });
   }
 };

@@ -62,7 +62,7 @@ exports.getProfile = async (req, res) => {
       profile: user 
     });
   } catch (error) {
-    console.error("GET PROFILE ERROR:", error);
+    console.error(`[🚨 GET PROFILE ERROR] Failed to load profile data: ${error.message}`, error);
     return res.status(500).json({ 
       success: false, 
       message: "Failed to load profile data" 
@@ -159,7 +159,7 @@ exports.updateProfile = async (req, res) => {
       profile: updatedUser 
     });
   } catch (error) {
-    console.error("UPDATE PROFILE ERROR:", error);
+    console.error(`[🚨 UPDATE PROFILE ERROR] Failed to update profile data: ${error.message}`, error);
     return res.status(500).json({ 
       success: false, 
       message: "Failed to update profile" 
@@ -191,7 +191,7 @@ exports.uploadAvatar = async (req, res) => {
           await cloudinary.uploader.destroy(`uba_avatars/${publicId}`);
         }
       } catch (cloudErr) {
-        console.error("Cloudinary deletion error:", cloudErr);
+        console.error(`[☁️ CLOUDINARY ERROR] Failed to delete old admin avatar: ${cloudErr.message}`, cloudErr);
       }
 
       const updatedAdmin = await Admin.findByIdAndUpdate(
@@ -232,7 +232,7 @@ exports.uploadAvatar = async (req, res) => {
         await cloudinary.uploader.destroy(`uba_avatars/${publicId}`);
       }
     } catch (cloudErr) {
-      console.error("Cloudinary deletion error:", cloudErr);
+      console.error(`[☁️ CLOUDINARY ERROR] Failed to delete old user avatar: ${cloudErr.message}`, cloudErr);
     }
 
     const updatedUser = await User.findByIdAndUpdate(
@@ -260,7 +260,7 @@ exports.uploadAvatar = async (req, res) => {
       avatarUrl: updatedUser.avatar
     });
   } catch (error) {
-    console.error("AVATAR UPLOAD ERROR:", error);
+    console.error(`[🚨 AVATAR UPLOAD ERROR] Server error during avatar upload: ${error.message}`, error);
     res.status(500).json({ success: false, message: 'Server error during upload', error: error.message });
   }
 };

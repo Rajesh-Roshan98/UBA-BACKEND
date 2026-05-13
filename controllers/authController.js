@@ -80,7 +80,7 @@ exports.getCaptcha = [
         ...generateCaptchaData() 
       });
     } catch (error) {
-      console.error("CAPTCHA Generation Error:", error);
+      console.error(`[🚨 CAPTCHA GENERATION ERROR] Failed to create CAPTCHA: ${error.message}`, error);
       res.status(500).json({ success: false, message: "Failed to generate CAPTCHA. Check server configuration." });
     }
   }
@@ -130,11 +130,16 @@ const RESEND_COOLDOWN = 60 * 1000;    // 60 seconds
 
 /* ================= MAIL TRANSPORT ================= */
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  tls: {
+    rejectUnauthorized: false,
+  }
 });
 
 /* ================= SEND OTP ================= */
@@ -202,7 +207,7 @@ exports.sendOtp = async (req, res) => {
       message: "OTP sent successfully",
     });
   } catch (err) {
-    console.error("SEND OTP ERROR:", err);
+    console.error(`[🚨 SEND OTP ERROR] Failed to send verification OTP: ${err.message}`, err);
     return res.status(500).json({
       success: false,
       message: "Failed to send OTP",
@@ -271,7 +276,7 @@ exports.verifyOtp = async (req, res) => {
       message: "Email verified successfully",
     });
   } catch (err) {
-    console.error("VERIFY OTP ERROR:", err);
+    console.error(`[🚨 VERIFY OTP ERROR] Failed during email OTP verification: ${err.message}`, err);
     return res.status(500).json({
       success: false,
       message: "OTP verification failed",
@@ -347,7 +352,7 @@ exports.signUp = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("SIGNUP ERROR:", err);
+    console.error(`[🚨 SIGNUP ERROR] Failed to create new user account: ${err.message}`, err);
     return res.status(500).json({ success: false, message: "Registration failed" });
   }
 };
@@ -465,7 +470,9 @@ exports.loginUser = async (req, res) => {
                 subject: "⚠️ Security Alert: Multiple Failed Login Attempts",
                 html: failedLoginEmail(failedLog?._id || "Unknown"), 
               });
-            } catch (mailErr) {}
+            } catch (mailErr) {
+              console.error(`[⚠️ ADMIN ALERT EMAIL ERROR] Failed to send failed login alert to admin: ${mailErr.message}`, mailErr);
+            }
           }
           // 🔥 NEW: Send new Captcha on password failure
           return res.status(401).json({ success: false, message: "Invalid credentials", newCaptcha: generateCaptchaData() });
@@ -507,7 +514,7 @@ exports.loginUser = async (req, res) => {
           try {
             emitToUser(admin._id.toString(), "new_notification", newNotif);
           } catch (err) {
-            console.error("Socket emit failed:", err);
+            console.error(`[🔌 SOCKET ERROR] Failed to emit admin new_login notification: ${err.message}`, err);
           }
         }
 
@@ -587,9 +594,9 @@ exports.loginUser = async (req, res) => {
             subject: "⚠️ Security Alert: Multiple Failed Login Attempts",
             html: failedLoginEmail(failedLog._id), 
           });
-          console.log(`Security alert email sent to ${user.email} for 3 failed attempts.`);
+          console.log(`[✉️ EMAIL SUCCESS] Security alert email sent to ${user.email} for 3 failed attempts.`);
         } catch (mailErr) {
-          console.error("Failed to send security alert email:", mailErr);
+          console.error(`[⚠️ USER ALERT EMAIL ERROR] Failed to send security alert email: ${mailErr.message}`, mailErr);
         }
       }
       
@@ -633,7 +640,7 @@ exports.loginUser = async (req, res) => {
       try {
         emitToUser(user._id.toString(), "new_notification", newNotif);
       } catch (err) {
-        console.error("Socket emit failed:", err);
+        console.error(`[🔌 SOCKET ERROR] Failed to emit user new_login notification: ${err.message}`, err);
       }
     }
 
@@ -686,7 +693,7 @@ exports.loginUser = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("LOGIN ERROR:", err);
+    console.error(`[🚨 LOGIN ERROR] Failure during account authentication process: ${err.message}`, err);
     return res.status(500).json({ success: false, message: "Login failed" });
   }
 };
@@ -706,7 +713,7 @@ exports.getUserDetail = async (req, res) => {
 
     return res.status(200).json({ success: true, user });
   } catch (err) {
-    console.error("GET USER ERROR:", err);
+    console.error(`[🚨 GET USER ERROR] Failed to retrieve user details from database: ${err.message}`, err);
     return res.status(500).json({ success: false, message: "Failed to load user" });
   }
 };
@@ -746,7 +753,7 @@ exports.logoutUser = async (req, res) => {
 
     return res.status(200).json({ success: true, message: "Logged out successfully" });
   } catch (err) {
-    console.error("LOGOUT ERROR:", err);
+    console.error(`[🚨 LOGOUT ERROR] Failed to complete logout process cleanly: ${err.message}`, err);
     return res.status(200).json({ success: true, message: "Logged out successfully (with logging error)" });
   }
 };
@@ -808,7 +815,7 @@ exports.forgotPasswordSendOtp = async (req, res) => {
 
     return res.status(200).json({ success: true, message: "Password reset OTP sent to email" });
   } catch (err) {
-    console.error("FORGOT PASSWORD SEND OTP ERROR:", err);
+    console.error(`[🚨 FORGOT PASSWORD ERROR] Failed to send password reset OTP: ${err.message}`, err);
     return res.status(500).json({ success: false, message: "Failed to send OTP" });
   }
 };
@@ -848,7 +855,7 @@ exports.forgotPasswordVerifyOtp = async (req, res) => {
 
     return res.status(200).json({ success: true, message: "OTP verified successfully. Proceed to reset password." });
   } catch (err) {
-    console.error("FORGOT PASSWORD VERIFY OTP ERROR:", err);
+    console.error(`[🚨 FORGOT PASSWORD VERIFY ERROR] Failed to verify reset OTP: ${err.message}`, err);
     return res.status(500).json({ success: false, message: "OTP verification failed" });
   }
 };
@@ -921,7 +928,7 @@ exports.resetPassword = async (req, res) => {
 
     return res.status(200).json({ success: true, message: "Password updated successfully" });
   } catch (err) {
-    console.error("RESET PASSWORD ERROR:", err);
+    console.error(`[🚨 RESET PASSWORD ERROR] Failed to update user password in DB: ${err.message}`, err);
     return res.status(500).json({ success: false, message: "Failed to update password" });
   }
 };
@@ -982,7 +989,7 @@ exports.changePassword = async (req, res) => {
 
     res.status(200).json({ message: "Password updated successfully" });
   } catch (error) {
-    console.error("Change Password Error:", error);
+    console.error(`[🚨 CHANGE PASSWORD ERROR] Internal error while changing password from settings: ${error.message}`, error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
@@ -997,7 +1004,7 @@ exports.getMyNotifications = async (req, res) => {
     }).sort({ createdAt: -1 }).lean();
     res.json(notifications);
   } catch (error) {
-    console.error('Get notifications error:', error);
+    console.error(`[🚨 GET NOTIFICATIONS ERROR] Failed to fetch active notifications: ${error.message}`, error);
     res.status(500).json({ error: 'Server error' });
   }
 };
@@ -1010,7 +1017,7 @@ exports.markAsRead = async (req, res) => {
     );
     res.json({ success: true });
   } catch (error) {
-    console.error('Mark as read error:', error);
+    console.error(`[🚨 MARK AS READ ERROR] Failed to update notification read status: ${error.message}`, error);
     res.status(500).json({ error: 'Server error' });
   }
 };
@@ -1023,7 +1030,7 @@ exports.markAllAsRead = async (req, res) => {
     );
     res.json({ success: true });
   } catch (error) {
-    console.error('Mark all as read error:', error);
+    console.error(`[🚨 MARK ALL READ ERROR] Failed to bulk update notifications: ${error.message}`, error);
     res.status(500).json({ error: 'Server error' });
   }
 };
@@ -1054,14 +1061,6 @@ exports.submitContactForm = async (req, res) => {
 
     await newContactMessage.save();
 
-    const transporter = nodemailer.createTransport({
-      service: 'gmail', 
-      auth: {
-        user: process.env.EMAIL_USER, 
-        pass: process.env.EMAIL_PASS, 
-      },
-    });
-
     const mailOptions = {
       from: process.env.EMAIL_USER, 
       to: process.env.EMAIL_USER,   
@@ -1071,7 +1070,7 @@ exports.submitContactForm = async (req, res) => {
     };
 
     transporter.sendMail(mailOptions).catch(err => {
-      console.error('Failed to send admin notification email:', err);
+      console.error(`[✉️ CONTACT FORM EMAIL ERROR] Failed to dispatch admin notification email: ${err.message}`, err);
     });
 
     res.status(201).json({
@@ -1081,7 +1080,7 @@ exports.submitContactForm = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Contact Form Error:', error);
+    console.error(`[🚨 CONTACT FORM ERROR] Failed to process contact form submission: ${error.message}`, error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to send message. Please try again later.' 
@@ -1126,7 +1125,7 @@ exports.getPublicAlertDetails = async (req, res) => {
       reason: log.details || "Multiple Failed Logins"
     });
   } catch (error) {
-    console.error("Public Alert Details Error:", error);
+    console.error(`[🚨 PUBLIC ALERT ERROR] Failed to fetch alert details: ${error.message}`, error);
     res.status(500).json({ message: "Server error fetching alert" });
   }
 };
@@ -1145,7 +1144,7 @@ exports.acknowledgePublicAlert = async (req, res) => {
     
     res.status(200).json({ message: "Activity acknowledged successfully" });
   } catch (error) {
-    console.error("Public Alert Acknowledge Error:", error);
+    console.error(`[🚨 ALERT ACKNOWLEDGE ERROR] Failed to update alert status to acknowledged: ${error.message}`, error);
     res.status(500).json({ message: "Server error acknowledging alert" });
   }
 };
@@ -1168,7 +1167,7 @@ exports.securePublicAccount = async (req, res) => {
     
     res.status(404).json({ message: "Account/Log not found to secure" });
   } catch (error) {
-    console.error("Public Alert Secure Error:", error);
+    console.error(`[🚨 SECURE ACCOUNT ERROR] Failed to delete active sessions for account securing: ${error.message}`, error);
     res.status(500).json({ message: "Server error securing account" });
   }
 };

@@ -107,7 +107,7 @@ exports.getDashboardOverview = async (req, res) => {
 
     res.status(200).json(dashboardData);
   } catch (error) {
-    console.error("MongoDB Dashboard Error:", error);
+    console.error(`[📊 DASHBOARD ERROR] Failed to calculate user dashboard overview: ${error.message}`, error);
     res.status(500).json({ message: "Error retrieving dashboard analytics from database" });
   }
 };
@@ -134,7 +134,7 @@ exports.getAlerts = async (req, res) => {
 
     res.status(200).json(formattedAlerts);
   } catch (error) {
-    console.error("Alerts Error:", error);
+    console.error(`[🚨 ALERTS FETCH ERROR] Failed to retrieve user alerts: ${error.message}`, error);
     res.status(500).json({ message: "Error retrieving security alerts" });
   }
 };
@@ -160,7 +160,7 @@ exports.resolveAlert = async (req, res) => {
       .status(200)
       .json({ message: "Alert successfully resolved", alert: updatedAlert });
   } catch (error) {
-    console.error("Resolve Alert Error:", error);
+    console.error(`[✅ ALERT RESOLVE ERROR] Failed to mark alert as resolved: ${error.message}`, error);
     res.status(500).json({ message: "Error updating alert status" });
   }
 };
@@ -205,7 +205,7 @@ exports.getFailedAttempts = async (req, res) => {
       data: failedLogs
     });
   } catch (error) {
-    console.error("Failed Attempts Error:", error);
+    console.error(`[❌ FAILED LOGINS ERROR] Failed to fetch failed attempt logs: ${error.message}`, error);
     res.status(500).json({ success: false, message: "Error fetching failed logs" });
   }
 };
@@ -231,7 +231,7 @@ exports.getReports = async (req, res) => {
 
     res.status(200).json(formattedReports);
   } catch (error) {
-    console.error("Reports Error:", error);
+    console.error(`[📄 REPORTS FETCH ERROR] Failed to retrieve user reports: ${error.message}`, error);
     res.status(500).json({ message: "Error retrieving reports" });
   }
 };
@@ -310,7 +310,7 @@ exports.getUserLog = async (req, res) => {
       accessLogs 
     });
   } catch (error) {
-    console.error("Activity Error:", error);
+    console.error(`[📜 ACTIVITY LOG ERROR] Failed to aggregate user activity timeline: ${error.message}`, error);
     res.status(500).json({ message: "Error retrieving activity monitor data" });
   }
 };

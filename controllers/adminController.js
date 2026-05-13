@@ -51,7 +51,7 @@ exports.getDashboardStats = async (req, res) => {
             });
         }
     } catch (err) {
-        console.error("Error reading raw data directory:", err.message);
+        console.error(`[📁 FS READ ERROR] Failed to read raw data directory for monitored data size: ${err.message}`, err);
     }
 
     let dataTransferred = "0 KB";
@@ -93,7 +93,7 @@ exports.getDashboardStats = async (req, res) => {
 
     res.status(200).json(responsePayload);
   } catch (err) {
-    console.error("DASHBOARD STATS ERROR:", err);
+    console.error(`[📊 ADMIN DASHBOARD ERROR] Failed to calculate dashboard stats: ${err.message}`, err);
     res.status(500).json({ success: false, message: "Server Error" });
   }
 };
@@ -146,7 +146,7 @@ exports.getAllUsers = async (req, res) => {
 
     res.status(200).json({ success: true, users });
   } catch (err) {
-    console.error("GET USERS ERROR:", err);
+    console.error(`[👥 GET USERS ERROR] Failed to aggregate user list from logs: ${err.message}`, err);
     res.status(500).json({ success: false, message: "Failed to fetch users" });
   }
 };
@@ -164,6 +164,7 @@ exports.updateUserStatus = async (req, res) => {
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     res.status(200).json({ success: true, message: "User updated", user });
   } catch (err) {
+    console.error(`[👤 UPDATE USER ERROR] Failed to update user status/role: ${err.message}`, err);
     res.status(500).json({ success: false, message: "Update failed" });
   }
 };
@@ -176,7 +177,7 @@ exports.getPermissions = async (req, res) => {
     const permissions = await Permission.find().lean();
     res.status(200).json({ success: true, permissions });
   } catch (err) {
-    console.error("GET PERMISSIONS ERROR:", err);
+    console.error(`[🔐 GET PERMISSIONS ERROR] Failed to fetch access permissions: ${err.message}`, err);
     res.status(500).json({ success: false, message: "Error fetching permissions" });
   }
 };
@@ -204,7 +205,7 @@ exports.grantAccess = async (req, res) => {
 
     res.status(201).json({ success: true, message: "Access granted successfully", permission: newPermission });
   } catch (err) {
-    console.error("GRANT ACCESS ERROR:", err);
+    console.error(`[✅ GRANT ACCESS ERROR] Failed to grant resource access to user: ${err.message}`, err);
     res.status(500).json({ success: false, message: "Failed to grant access" });
   }
 };

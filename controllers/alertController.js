@@ -59,7 +59,7 @@ exports.getAlerts = async (req, res) => {
 
     res.status(200).json({ success: true, alerts });
   } catch (err) {
-    console.error("GET ALERTS ERROR:", err);
+    console.error(`[🚨 GET ALERTS ERROR] Failed to fetch activity alerts: ${err.message}`, err);
     res.status(500).json({ success: false, message: "Failed to fetch alerts" });
   }
 };
@@ -78,6 +78,7 @@ exports.updateAlertStatus = async (req, res) => {
 
     res.status(200).json({ success: true, message: `Alert marked as ${status}` });
   } catch (err) {
+    console.error(`[🔄 UPDATE ALERT ERROR] Failed to update alert status: ${err.message}`, err);
     res.status(500).json({ success: false, message: "Update failed" });
   }
 };
@@ -123,6 +124,7 @@ exports.getAnomalies = async (req, res) => {
 
     res.status(200).json({ success: true, anomalies: formatted });
   } catch (err) {
+    console.error(`[⚠️ GET ANOMALIES ERROR] Failed to fetch anomalies for review: ${err.message}`, err);
     res.status(500).json({ success: false, message: "Error fetching anomalies" });
   }
 };

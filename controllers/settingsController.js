@@ -37,7 +37,7 @@ exports.getUserSettings = async (req, res) => {
     const user = await User.findById(req.user.userId).select('-password').lean(); 
     
     if (!user) {
-      console.log("❌ User not found in database!");
+      console.warn(`[⚠️ GET SETTINGS WARNING] User not found in database for ID: ${req.user.userId}`);
       return res.status(404).json({ message: 'User not found' });
     }
 
@@ -49,6 +49,7 @@ exports.getUserSettings = async (req, res) => {
       isEmailVerified: user.isEmailVerified
     });
   } catch (error) {
+    console.error(`[🚨 GET SETTINGS ERROR] Failed to fetch user settings: ${error.message}`, error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
@@ -205,6 +206,7 @@ exports.updateAccount = async (req, res) => {
 
     res.json(updatedUser);
   } catch (error) {
+    console.error(`[🚨 UPDATE ACCOUNT ERROR] Failed to update general account info: ${error.message}`, error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
@@ -259,6 +261,7 @@ exports.deleteAccount = async (req, res) => {
 
     res.json({ message: 'Account deleted successfully' });
   } catch (error) {
+    console.error(`[🚨 DELETE ACCOUNT ERROR] Failed to process account deletion: ${error.message}`, error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
@@ -341,7 +344,7 @@ exports.getUserSessions = async (req, res) => {
 
     return res.status(200).json({ sessions: formattedSessions });
   } catch (err) {
-    console.error("Error fetching sessions:", err);
+    console.error(`[🚨 GET SESSIONS ERROR] Failed to fetch user sessions: ${err.message}`, err);
     return res.status(500).json({ message: "Failed to fetch sessions" });
   }
 };
@@ -409,7 +412,7 @@ exports.deleteSession = async (req, res) => {
 
     res.status(200).json({ message: "Device logged out successfully" });
   } catch (error) {
-    console.error("Error logging out session:", error);
+    console.error(`[🚨 DELETE SESSION ERROR] Failed to log out of specific device: ${error.message}`, error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
@@ -474,7 +477,7 @@ exports.deleteAllOtherSessions = async (req, res) => {
 
     res.status(200).json({ message: "All other devices logged out successfully" });
   } catch (error) {
-    console.error("Error logging out other sessions:", error);
+    console.error(`[🚨 DELETE ALL SESSIONS ERROR] Failed to log out all other devices: ${error.message}`, error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };

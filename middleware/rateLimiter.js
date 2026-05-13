@@ -82,7 +82,7 @@ export const globalLimiter = (req, res, next) => {
       store: getLimiterStore('global'), 
       keyGenerator: hybridKeyGenerator,
       // 🔥 UPDATED: Skip health checks AND the high-frequency UBA log ingestion route
-      skip: (req) => req.path === '/health' || req.originalUrl === '/api/v1/uba/log', 
+      skip: (req) => req.originalUrl === '/api/v1/auth/health' || req.originalUrl === '/api/v1/uba/log', 
       handler: createRateLimitHandler('Too many requests detected from this IP. Please try again later.')
     });
   }

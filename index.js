@@ -1,4 +1,6 @@
 require("dotenv").config();
+const dns = require("node:dns");
+dns.setDefaultResultOrder("ipv4first");
 const express = require("express");
 const path = require("path");
 const mongoose = require("mongoose");
@@ -168,11 +170,85 @@ app.use("/api/v1/user", userRoutes);
 
 // 🔥 FIX 4: Global Error Handling Middleware (Catches unhandled errors gracefully)
 app.use((err, req, res, next) => {
-  console.error("Global Error Caught:", err);
-  res.status(500).json({
+  // 🔥 ENHANCED ERROR DETAILS: Provide meaningful, understandable error information
+  const errorDetails = {
     success: false,
-    message: "Internal Server Error"
-  });
+    message: "Internal Server Error",
+    error: {
+      type: err.constructor.name || "Unknown Error Type",
+      message: err.message || "No error message available",
+      path: req.originalUrl,
+      method: req.method,
+      timestamp: new Date().toISOString()
+    }
+  };
+
+  // 🔥 DEVELOPMENT MODE: Show stack trace and additional debugging information
+  if (process.env.NODE_ENV !== "production") {
+    errorDetails.error.stack = err.stack || "No stack trace available";
+    errorDetails.error.code = err.code || "No error code";
+    errorDetails.error.statusCode = err.statusCode || 500;
+    
+    // Add request details for debugging
+    errorDetails.request = {
+      body: req.body,
+      params: req.params,
+      query: req.query,
+      headers: {
+        ...req.headers,
+        authorization: req.headers.authorization ? "[REDACTED]" : undefined
+      }
+    };
+  }
+
+  // 🔥 SPECIFIC ERROR TYPE HANDLING: Make errors more understandable
+  if (err.name === "ValidationError") {
+    errorDetails.message = "Data validation failed";
+    errorDetails.error.validationErrors = Object.values(err.errors).map(e => ({
+      field: e.path,
+      message: e.message,
+      value: e.value
+    }));
+    console.error("❌ Validation Error:", errorDetails);
+    return res.status(400).json(errorDetails);
+  }
+
+  if (err.name === "CastError") {
+    errorDetails.message = "Invalid ID format";
+    errorDetails.error.invalidId = err.value;
+    console.error("❌ Cast Error:", errorDetails);
+    return res.status(400).json(errorDetails);
+  }
+
+  if (err.code === 11000) {
+    errorDetails.message = "Duplicate entry found";
+    errorDetails.error.duplicateFields = err.keyValue;
+    console.error("❌ Duplicate Key Error:", errorDetails);
+    return res.status(409).json(errorDetails);
+  }
+
+  if (err.name === "JsonWebTokenError") {
+    errorDetails.message = "Invalid authentication token";
+    console.error("❌ JWT Error:", errorDetails);
+    return res.status(401).json(errorDetails);
+  }
+
+  if (err.name === "TokenExpiredError") {
+    errorDetails.message = "Authentication token has expired";
+    console.error("❌ Token Expired:", errorDetails);
+    return res.status(401).json(errorDetails);
+  }
+
+  // Default error logging
+  console.error("❌ Unhandled Error:", errorDetails);
+  
+  // 🔥 PRODUCTION MODE: Send cleaner response
+  if (process.env.NODE_ENV === "production") {
+    delete errorDetails.error;
+    delete errorDetails.request;
+  }
+  
+  res.status(err.statusCode || 500).json(errorDetails);
 });
 
 /* ---------- SERVER START ---------- */
@@ -184,7 +260,12 @@ if (require.main === module) {
       await initRedisLimiter();
       console.log("✅ Rate limiters initialized.");
     } catch (err) {
-      console.error("❌ Failed to initialize rate limiters:", err);
+      console.error("❌ Failed to initialize rate limiters:", {
+        message: err.message,
+        code: err.code,
+        type: err.constructor.name,
+        stack: process.env.NODE_ENV !== "production" ? err.stack : undefined
+      });
     }
 
     // 2. Connect to the database and start the server ONLY after Redis is ready
@@ -192,8 +273,12 @@ if (require.main === module) {
       .then(async () => {
         try {
           await mlHealthCheck();
-        } catch {
-          console.error("🚨 ML is NOT ready.");
+        } catch (err) {
+          console.error("🚨 ML Health Check Failed:", {
+            message: err.message,
+            code: err.code,
+            type: err.constructor.name
+          });
         }
 
         const PORT = process.env.PORT || 3000;
@@ -210,7 +295,12 @@ if (require.main === module) {
         });
       })
       .catch((err) => {
-        console.error("❌ DB Connection Error", err);
+        console.error("❌ Database Connection Failed:", {
+          message: err.message,
+          code: err.code,
+          name: err.name,
+          stack: process.env.NODE_ENV !== "production" ? err.stack : undefined
+        });
       });
   };
 
@@ -233,7 +323,11 @@ process.on("SIGINT", async () => {
     });
 
   } catch (err) {
-    console.error("❌ Shutdown error:", err);
+    console.error("❌ Shutdown error:", {
+      message: err.message,
+      code: err.code,
+      type: err.constructor.name
+    });
     process.exit(1);
   }
 });

@@ -45,7 +45,7 @@ exports.getSystemLogs = async (req, res) => {
 
     res.status(200).json({ success: true, logs: formattedLogs });
   } catch (err) {
-    console.error("SYSTEM LOGS ERROR:", err);
+    console.error(`[📜 SYSTEM LOGS ERROR] Failed to fetch system activity logs: ${err.message}`, err);
     res.status(500).json({ success: false, message: "Failed to fetch logs" });
   }
 };
