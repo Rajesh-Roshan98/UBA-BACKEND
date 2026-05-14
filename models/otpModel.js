@@ -12,6 +12,11 @@ const otpSchema = new mongoose.Schema(
       type: String, // 🔥 FIX: Changed from Number to String to safely store the bcrypt hash
       required: true, 
     },
+    // 🔥 SECURITY FIX: Added attempts tracker to prevent OTP brute-force guessing
+    attempts: {
+      type: Number,
+      default: 0,
+    },
     createdAt: {
       type: Date,
       default: Date.now,

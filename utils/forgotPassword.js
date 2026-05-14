@@ -7,20 +7,20 @@ const generateAuthEmail = (type, otp = null) => {
   // Dynamic Content Block
   const bodyContent = isOtp 
     ? `
-      <p style="margin: 0 0 16px; font-size: 16px; color: #334155;">Hello,</p>
-      <p style="margin: 0 0 24px; font-size: 16px; color: #475569; line-height: 1.6;">
+      <p style="margin: 0 0 16px; font-size: 15px; color: #334155;">Hello,</p>
+      <p style="margin: 0 0 24px; font-size: 15px; color: #475569; line-height: 1.6;">
         We received a request to reset the password for your account. Please use the verification code below to complete the process:
       </p>
        
-      <div style="text-align: center; margin: 32px 0; padding: 24px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);">
+      <div style="text-align: center; margin: 32px 0; padding: 24px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
         <p style="font-family: 'Courier New', Courier, monospace; font-size: 38px; font-weight: 700; color: #4f46e5; letter-spacing: 12px; margin: 0; padding-left: 12px;">${otp}</p>
       </div>
       
-      <p style="margin: 0 0 32px; font-size: 15px; color: #475569; text-align: center;">
+      <p style="margin: 0 0 32px; font-size: 14px; color: #475569; text-align: center;">
         This code will expire in <strong>5 minutes</strong>.
       </p>
       
-      <div style="border-top: 2px dashed #e2e8f0; padding-top: 24px; margin-top: 8px;">
+      <div style="background-color: #f8fafc; border-left: 4px solid #cbd5e1; padding: 16px 20px; border-radius: 0 6px 6px 0; margin-top: 10px;">
         <h4 style="margin: 0 0 8px; font-size: 14px; color: #1e293b;">Didn't request this?</h4>
         <p style="margin: 0; font-size: 13px; color: #64748b; line-height: 1.5;">
           If you did not initiate this password reset, you can safely ignore this email. Your password will not be changed unless you enter the verification code above.
@@ -37,16 +37,16 @@ const generateAuthEmail = (type, otp = null) => {
         </div>
       </div>
       
-      <p style="margin: 0 0 16px; font-size: 16px; color: #334155;">Hello,</p>
-      <p style="margin: 0 0 16px; font-size: 16px; color: #475569; line-height: 1.6;">
+      <p style="margin: 0 0 16px; font-size: 15px; color: #334155;">Hello,</p>
+      <p style="margin: 0 0 16px; font-size: 15px; color: #475569; line-height: 1.6;">
         This email is to confirm that the password for your account has been successfully changed.
       </p>
-      <p style="margin: 0 0 32px; font-size: 16px; color: #475569; line-height: 1.6;">
+      <p style="margin: 0 0 32px; font-size: 15px; color: #475569; line-height: 1.6;">
         You can now use your new password to log in to your account dashboard.
       </p>
       
-      <div style="background-color: #fff1f2; border-left: 4px solid #e11d48; padding: 16px 20px; border-radius: 0 8px 8px 0; margin-top: 10px;">
-        <p style="margin: 0; font-size: 14px; color: #be123c; line-height: 1.5;">
+      <div style="background-color: #fff1f2; border-left: 4px solid #e11d48; padding: 16px 20px; border-radius: 0 6px 6px 0; margin-top: 10px;">
+        <p style="margin: 0; font-size: 13px; color: #be123c; line-height: 1.5;">
           <strong>Security Alert:</strong> If you did not make this change, please contact our support team immediately to secure your account.
         </p>
       </div>
@@ -59,72 +59,93 @@ const generateAuthEmail = (type, otp = null) => {
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${title} | Cloud-UBA</title>
       <style>
+        /* Inline CSS for maximum email client compatibility */
         body { 
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
-          background-color: #f1f5f9; 
+          background-color: #f4f4f5; 
+          color: #334155;
           margin: 0; 
-          padding: 0; 
+          padding: 40px 20px; 
           -webkit-font-smoothing: antialiased;
         }
-        .wrapper {
-          padding: 40px 20px;
-          width: 100%;
-          box-sizing: border-box;
-        }
         .container { 
-          max-width: 540px; 
+          max-width: 600px; 
           margin: 0 auto; 
           background-color: #ffffff; 
-          border-radius: 16px; 
+          border-radius: 8px; 
           overflow: hidden; 
-          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01); 
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.06); 
           border: 1px solid #e2e8f0; 
         }
-        .header { 
+        .brand-header { 
           background-color: ${headerBgColor}; 
-          padding: 32px 24px; 
-          text-align: center; 
+          padding: 24px 30px; 
+          text-align: left; 
         }
-        .header h1 { 
+        .brand-logo { 
           color: #ffffff; 
-          margin: 0; 
           font-size: 22px; 
-          font-weight: 600; 
+          font-weight: 700; 
           letter-spacing: 0.5px;
+          margin: 0; 
+        }
+        .brand-subtitle { 
+          color: rgba(255, 255, 255, 0.9); 
+          font-size: 13px; 
+          margin-top: 4px; 
+          font-weight: 500; 
         }
         .content { 
-          padding: 40px 32px; 
+          padding: 30px; 
+        }
+        .content-header {
+          margin-bottom: 24px;
+          padding-bottom: 16px;
+          border-bottom: 1px solid #f1f5f9;
+        }
+        .content-header h1 {
+          margin: 0;
+          font-size: 20px;
+          font-weight: 600;
+          color: #0f172a;
         }
         .footer { 
           background-color: #f8fafc; 
-          padding: 24px; 
+          padding: 20px 30px; 
           text-align: center; 
           border-top: 1px solid #e2e8f0; 
         }
         .footer p {
-          margin: 0;
-          font-size: 13px; 
-          color: #94a3b8; 
+          margin: 4px 0;
+          font-size: 12px; 
+          color: #64748b; 
+          line-height: 1.5;
         }
         @media only screen and (max-width: 600px) {
-          .wrapper { padding: 20px 10px; }
-          .content { padding: 30px 20px; }
+          body { padding: 20px 12px; }
+          .brand-header, .content, .footer { padding: 24px; }
         }
       </style>
     </head>
     <body>
-      <div class="wrapper">
-        <div class="container">
-          <div class="header">
+      <div class="container">
+        <div class="brand-header">
+          <div class="brand-logo">Cloud-UBA</div>
+          <div class="brand-subtitle">Account Management</div>
+        </div>
+        
+        <div class="content">
+          <div class="content-header">
             <h1>${title}</h1>
           </div>
-          <div class="content">
-            ${bodyContent}
-          </div>
-          <div class="footer">
-            <p>&copy; ${new Date().getFullYear()} UBA. All rights reserved.</p>
-          </div>
+          ${bodyContent}
+        </div>
+        
+        <div class="footer">
+          <p>This is an automated message from the Cloud-UBA System.</p>
+          <p>&copy; ${new Date().getFullYear()} Cloud-UBA. All rights reserved.</p>
         </div>
       </div>
     </body>

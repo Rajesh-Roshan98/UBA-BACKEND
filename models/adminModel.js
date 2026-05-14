@@ -1,6 +1,5 @@
 const mongoose = require("mongoose");
 
-// ✅ FIX: Renamed variable from userSchema to adminSchema so the export at the bottom works
 const adminSchema = new mongoose.Schema(
   {
     adminId: {

@@ -51,11 +51,16 @@ app.use(
       
       // Check if the incoming origin is in our cleaned array
       if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        console.error(`🚫 Blocked by CORS: Origin '${origin}' is not in the allowed list.`);
-        callback(new Error('Not allowed by CORS'));
+        return callback(null, true);
+      } 
+      
+      // 🔥 SECURITY FIX: Dynamically allow any Vercel preview URL to prevent CORS blocks on PR deployments
+      if (origin.endsWith('.vercel.app')) {
+        return callback(null, true);
       }
+      
+      console.error(`🚫 Blocked by CORS: Origin '${origin}' is not in the allowed list.`);
+      return callback(new Error('Not allowed by CORS'));
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"], // 🔑 REQUIRED

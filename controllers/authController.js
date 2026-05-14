@@ -28,6 +28,12 @@ const validator = require("validator"); // 🔥 NEW: Ensure validator is availab
 // 🔥 NEW: Import our Socket helper to emit real-time notifications
 const { emitToUser } = require("../utils/socketConfig"); 
 
+// 🔥 FIX: Generate a valid dummy hash once at startup to safely prevent timing attacks
+const DUMMY_HASH = bcrypt.hashSync("dummy_password", 10);
+
+// 🔥 SECURITY FIX: Temporary in-memory store to prevent CAPTCHA replay attacks
+const usedCaptchaNonces = new Set();
+
 // ==========================================================
 // 🔥 UPGRADED: SECURE CAPTCHA UTILITIES
 // ==========================================================
@@ -56,7 +62,8 @@ const generateCaptchaData = () => {
     background: '#f4f4f5'
   });
 
-  const captchaText = captcha.text;
+  // 🔥 FIX: Reverted to strict case-sensitive CAPTCHA
+  const captchaText = captcha.text; 
   const expires = Date.now() + 5 * 60 * 1000; // 5 minutes expiry
   const nonce = crypto.randomBytes(8).toString('hex'); // Unique random string to prevent replay attacks
   
@@ -130,16 +137,20 @@ const RESEND_COOLDOWN = 60 * 1000;    // 60 seconds
 
 /* ================= MAIL TRANSPORT ================= */
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false,
+  service: "gmail",
+
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  tls: {
-    rejectUnauthorized: false,
-  }
+
+  family: 4, // 🔥 FORCE IPV4
+
+  connectionTimeout: 10000, // 10 sec
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
+
+  // 🔥 SECURITY FIX: Removed insecure tls rejectUnauthorized: false
 });
 
 /* ================= SEND OTP ================= */
@@ -153,12 +164,15 @@ exports.sendOtp = async (req, res) => {
         message: "Email is required",
       });
 
+    // 🔥 SECURITY FIX: Normalize email
+    const normalizedEmail = email.trim().toLowerCase();
+
     // 🔥 INDUSTRY STANDARD: Validate email format before hitting the DB
-    if (!validator.isEmail(email.trim())) {
+    if (!validator.isEmail(normalizedEmail)) {
       return res.status(400).json({ success: false, message: "Invalid email format" });
     }
 
-    const user = await User.findOne({ email }).select("isEmailVerified").lean();
+    const user = await User.findOne({ email: normalizedEmail }).select("isEmailVerified").lean();
 
     if (!user)
       return res.status(404).json({
@@ -172,7 +186,7 @@ exports.sendOtp = async (req, res) => {
         message: "Email already verified",
       });
 
-    const existingOtp = await Otp.findOne({ email }).select("createdAt").lean();
+    const existingOtp = await Otp.findOne({ email: normalizedEmail }).select("createdAt").lean();
 
     if (
       existingOtp &&
@@ -189,18 +203,22 @@ exports.sendOtp = async (req, res) => {
     // 🔥 SECURITY FIX: Hash the OTP before saving to database
     const hashedOtp = await bcrypt.hash(otp.toString(), 10);
 
+    // 🔥 FIX: Reset attempts to 0 when generating a new OTP
     await Otp.findOneAndUpdate(
-      { email },
-      { email, otp: hashedOtp, createdAt: Date.now() },
+      { email: normalizedEmail },
+      { email: normalizedEmail, otp: hashedOtp, attempts: 0, createdAt: Date.now() },
       { upsert: true, new: true }
     );
 
-    await transporter.sendMail({
+    // 🔥 FIRE AND FORGET: Removed await
+    transporter.sendMail({
       from: `"UBA Auth" <${process.env.EMAIL_USER}>`,
-      to: email,
+      to: normalizedEmail,
       subject: "Verify Your Email",
       html: generateOtpEmail(otp), // Send the unhashed OTP to the user's email
-    });
+    })
+    .then(() => console.log(`[✉️ EMAIL SUCCESS] Verification OTP sent to ${normalizedEmail}`))
+    .catch((mailErr) => console.error(`[⚠️ EMAIL ERROR] Failed to send verification OTP to ${normalizedEmail}: ${mailErr.message}`, mailErr));
 
     return res.status(200).json({
       success: true,
@@ -226,15 +244,24 @@ exports.verifyOtp = async (req, res) => {
         message: "Email and OTP are required",
       });
 
-    const record = await Otp.findOne({ email }).select("otp createdAt").lean();
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // 🔥 SECURITY FIX: Added 'attempts' to the select query
+    const record = await Otp.findOne({ email: normalizedEmail }).select("otp createdAt attempts").lean();
     if (!record)
       return res.status(400).json({
         success: false,
         message: "OTP not found",
       });
 
+    // 🔥 SECURITY FIX: Stop OTP brute-forcing
+    if (record.attempts >= 5) {
+      await Otp.deleteOne({ email: normalizedEmail });
+      return res.status(429).json({ success: false, message: "Too many invalid OTP attempts. Please request a new one." });
+    }
+
     if (Date.now() - record.createdAt > OTP_EXPIRY) {
-      await Otp.deleteOne({ email });
+      await Otp.deleteOne({ email: normalizedEmail });
       return res.status(400).json({
         success: false,
         message: "OTP expired",
@@ -244,13 +271,15 @@ exports.verifyOtp = async (req, res) => {
     // 🔥 SECURITY FIX: Compare incoming OTP with hashed OTP in database
     const isMatch = await bcrypt.compare(otp.toString(), record.otp);
     if (!isMatch) {
+      // 🔥 SECURITY FIX: Increment failed attempt counter
+      await Otp.updateOne({ email: normalizedEmail }, { $inc: { attempts: 1 } });
       return res.status(400).json({
         success: false,
         message: "Invalid OTP",
       });
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user)
       return res.status(404).json({
         success: false,
@@ -269,7 +298,7 @@ exports.verifyOtp = async (req, res) => {
       req: req
     });
 
-    await Otp.deleteOne({ email });
+    await Otp.deleteOne({ email: normalizedEmail });
 
     return res.status(200).json({
       success: true,
@@ -293,29 +322,49 @@ exports.signUp = async (req, res) => {
       return res.status(400).json({ success: false, message: "All fields are required" });
 
     // 🔥 INDUSTRY STANDARD: Name & Email Validation
+    const normalizedEmail = email.trim().toLowerCase();
+    
     if (firstName.trim().length < 2 || firstName.trim().length > 50) {
       return res.status(400).json({ success: false, message: "First name must be between 2 and 50 characters" });
     }
-    if (!validator.isEmail(email.trim())) {
+
+    // 🔥 SECURITY FIX: Strict Name Validation (Blocks symbols and numbers)
+    const nameRegex = /^[A-Za-z\s'-]+$/;
+    if (!nameRegex.test(firstName.trim()) || (lastName && !nameRegex.test(lastName.trim()))) {
+       return res.status(400).json({ success: false, message: "Names can only contain letters, spaces, hyphens, and apostrophes" });
+    }
+
+    if (!validator.isEmail(normalizedEmail)) {
       return res.status(400).json({ success: false, message: "Invalid email format" });
     }
 
-    const exists = await User.exists({ email });
+    // 🔥 SECURITY FIX: Enforce strong passwords on signup (Upper, Lower, Number, Special, 8-64 chars)
+    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*#?&]).{8,64}$/;
+    if (!strongPasswordRegex.test(password)) {
+      return res.status(400).json({ success: false, message: "Password must be 8-64 characters and include an uppercase letter, lowercase letter, number, and special character." });
+    }
+
+    const exists = await User.exists({ email: normalizedEmail });
     if (exists) return res.status(409).json({ success: false, message: "User already exists" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
     
-    // 🔥 SECURITY FIX: ID Collision Loop - Guarantee unique ID
+    // 🔥 SECURITY FIX: ID Collision Loop - Added attempts limit to prevent infinite loops
     let generatedUserId;
     let isUnique = false;
+    let attempts = 0;
     
-    while (!isUnique) {
-      // 🔥 FIX: Pass the user's entire name to the generator to pull random letters
+    while (!isUnique && attempts < 10) {
       generatedUserId = generateUserId(`${firstName} ${middleName || ""} ${lastName}`);
       const idExists = await User.exists({ userId: generatedUserId });
       if (!idExists) {
         isUnique = true;
       }
+      attempts++;
+    }
+
+    if (!isUnique) {
+      return res.status(500).json({ success: false, message: "Server error generating unique ID. Please try again." });
     }
 
     const user = await User.create({
@@ -323,7 +372,7 @@ exports.signUp = async (req, res) => {
       firstName: firstName.trim(),
       middleName: middleName ? middleName.trim() : "",
       lastName: lastName.trim(),
-      email: email.trim().toLowerCase(),
+      email: normalizedEmail,
       password: hashedPassword,
       role: "user", 
       isEmailVerified: false, 
@@ -383,23 +432,37 @@ exports.loginUser = async (req, res) => {
       });
     }
 
+    // 🔥 SECURITY FIX: Check if CAPTCHA nonce was already used (Replay Attack Prevention)
+    if (usedCaptchaNonces.has(nonce)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "CAPTCHA already used. Please request a new one.", 
+        newCaptcha: generateCaptchaData() 
+      });
+    }
+
     const SECRET = process.env.CAPTCHA_SECRET;
     if (!SECRET) {
       return res.status(500).json({ success: false, message: "Server misconfiguration. CAPTCHA_SECRET missing." });
     }
 
-    // Rebuild the hash with the correct secret and nonce to verify
-    const dataToHash = `${captchaInput}.${expires}.${nonce}.${SECRET}`;
+    // 🔥 FIX: Strict Case-Sensitive CAPTCHA matching
+    const exactCaptchaInput = captchaInput.trim();
+    const dataToHash = `${exactCaptchaInput}.${expires}.${nonce}.${SECRET}`;
     const validHash = crypto.createHash('sha256').update(dataToHash).digest('hex');
 
-    // Strict Case-Sensitive Match
-    if (hash !== validHash) {
+    // 🔥 FIX: Strict Case-Sensitive Match using TimingSafeEqual
+    if (hash.length !== validHash.length || !crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(validHash))) {
       return res.status(400).json({ 
         success: false, 
         message: "Invalid CAPTCHA. Please ensure exact match.", 
         newCaptcha: generateCaptchaData() 
       });
     }
+
+    // 🔥 SECURITY FIX: Mark nonce as used and auto-delete it after 5 minutes
+    usedCaptchaNonces.add(nonce);
+    setTimeout(() => usedCaptchaNonces.delete(nonce), 5 * 60 * 1000);
     // ==========================================================
 
     const loginIdentifier = (identifier || email || "").trim();
@@ -442,6 +505,15 @@ exports.loginUser = async (req, res) => {
       }).select("+password").lean();
       
       if (admin) {
+        // 🔥 SECURITY FIX: 15-Minute Account Lockout Check
+        const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+        const lockCheckCount = await AdminLog.countDocuments({
+          admin: admin._id, action: "login", status: "failed", createdAt: { $gte: fifteenMinutesAgo }
+        });
+        if (lockCheckCount >= 5) {
+          return res.status(429).json({ success: false, message: "Account temporarily locked due to too many failed attempts. Try again in 15 minutes.", newCaptcha: generateCaptchaData() });
+        }
+
         const match = await bcrypt.compare(password, admin.password);
         if (!match) {
           await logActivity({
@@ -456,32 +528,36 @@ exports.loginUser = async (req, res) => {
           });
           
           const failedLog = await AdminLog.findOne({ admin: admin._id, status: "failed" }).sort({ createdAt: -1 }).select("_id").lean();
-          const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
           
           const failedAttemptsCount = await AdminLog.countDocuments({
             admin: admin._id, action: "login", status: "failed", createdAt: { $gte: fifteenMinutesAgo }
           });
 
           if (failedAttemptsCount > 0 && failedAttemptsCount % 3 === 0) {
-            try {
-              await transporter.sendMail({
-                from: `"UBA Security" <${process.env.EMAIL_USER}>`,
-                to: admin.email,
-                subject: "⚠️ Security Alert: Multiple Failed Login Attempts",
-                html: failedLoginEmail(failedLog?._id || "Unknown"), 
-              });
-            } catch (mailErr) {
-              console.error(`[⚠️ ADMIN ALERT EMAIL ERROR] Failed to send failed login alert to admin: ${mailErr.message}`, mailErr);
-            }
+            // 🔥 FIRE AND FORGET: Removed await & try/catch
+            transporter.sendMail({
+              from: `"UBA Security" <${process.env.EMAIL_USER}>`,
+              to: admin.email,
+              subject: "⚠️ Security Alert: Multiple Failed Login Attempts",
+              html: failedLoginEmail(failedLog?._id || "Unknown"), 
+            })
+            .then(() => console.log(`[✉️ EMAIL SUCCESS] Admin security alert sent to ${admin.email}`))
+            .catch((mailErr) => console.error(`[⚠️ ADMIN ALERT EMAIL ERROR] Failed to send failed login alert to admin: ${mailErr.message}`, mailErr));
           }
           // 🔥 NEW: Send new Captcha on password failure
           return res.status(401).json({ success: false, message: "Invalid credentials", newCaptcha: generateCaptchaData() });
         }
 
+        // 🔥 SECURITY FIX: Added standard enterprise options to JWT
         const token = jwt.sign(
           { userId: admin._id, role: "admin" }, 
           process.env.JWT_SECRET,
-          { expiresIn: "1d" }
+          { 
+            expiresIn: "1d",
+            issuer: "UBA",
+            audience: "UBA_USERS",
+            algorithm: "HS256"
+          }
         );
 
         const existingAdminSession = await AdminSession.exists({
@@ -560,8 +636,21 @@ exports.loginUser = async (req, res) => {
           },
         });
       }
+      
+      // 🔥 FIX: Prevent User Enumeration Timing Attacks safely with pre-generated hash
+      await bcrypt.compare(password, DUMMY_HASH);
+
       // 🔥 NEW: Send new Captcha on total not-found failure
       return res.status(401).json({ success: false, message: "Invalid credentials", newCaptcha: generateCaptchaData() });
+    }
+
+    // 🔥 SECURITY FIX: 15-Minute Account Lockout Check
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+    const userLockCheckCount = await UserLog.countDocuments({
+      user: user._id, action: "login", status: "failed", createdAt: { $gte: fifteenMinutesAgo }
+    });
+    if (userLockCheckCount >= 5) {
+      return res.status(429).json({ success: false, message: "Account temporarily locked due to too many failed attempts. Try again in 15 minutes.", newCaptcha: generateCaptchaData() });
     }
 
     const match = await bcrypt.compare(password, user.password);
@@ -577,7 +666,6 @@ exports.loginUser = async (req, res) => {
       });
 
       const failedLog = await UserLog.findOne({ user: user._id, status: "failed" }).sort({ createdAt: -1 }).select("_id").lean();
-      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
       
       const failedAttemptsCount = await UserLog.countDocuments({
         user: user._id,
@@ -587,27 +675,31 @@ exports.loginUser = async (req, res) => {
       });
 
       if (failedAttemptsCount > 0 && failedAttemptsCount % 3 === 0) {
-        try {
-          await transporter.sendMail({
-            from: `"UBA Security" <${process.env.EMAIL_USER}>`,
-            to: user.email,
-            subject: "⚠️ Security Alert: Multiple Failed Login Attempts",
-            html: failedLoginEmail(failedLog._id), 
-          });
-          console.log(`[✉️ EMAIL SUCCESS] Security alert email sent to ${user.email} for 3 failed attempts.`);
-        } catch (mailErr) {
-          console.error(`[⚠️ USER ALERT EMAIL ERROR] Failed to send security alert email: ${mailErr.message}`, mailErr);
-        }
+        // 🔥 FIRE AND FORGET: Removed await & try/catch
+        transporter.sendMail({
+          from: `"UBA Security" <${process.env.EMAIL_USER}>`,
+          to: user.email,
+          subject: "⚠️ Security Alert: Multiple Failed Login Attempts",
+          html: failedLoginEmail(failedLog._id), 
+        })
+        .then(() => console.log(`[✉️ EMAIL SUCCESS] Security alert email sent to ${user.email} for 3 failed attempts.`))
+        .catch((mailErr) => console.error(`[⚠️ USER ALERT EMAIL ERROR] Failed to send security alert email: ${mailErr.message}`, mailErr));
       }
       
       // 🔥 NEW: Send new Captcha on password failure
       return res.status(401).json({ success: false, message: "Invalid credentials", newCaptcha: generateCaptchaData() });
     }
 
+    // 🔥 SECURITY FIX: Added standard enterprise options to JWT
     const token = jwt.sign(
       { userId: user._id, role: user.role }, 
       process.env.JWT_SECRET,
-      { expiresIn: "1d" }
+      { 
+        expiresIn: "1d",
+        issuer: "UBA",
+        audience: "UBA_USERS",
+        algorithm: "HS256"
+      }
     );
 
     const existingSession = await Session.exists({
@@ -785,7 +877,8 @@ exports.forgotPasswordSendOtp = async (req, res) => {
     }
 
     if (!account) {
-      return res.status(404).json({ success: false, message: "No account found with that email or ID" });
+      // 🔥 FIX: Stop User Enumeration by returning a generic success message instead of a 404
+      return res.status(200).json({ success: true, message: "If that account exists, a password reset OTP has been sent to the email." });
     }
 
     const targetEmail = account.email; 
@@ -800,20 +893,24 @@ exports.forgotPasswordSendOtp = async (req, res) => {
     // 🔥 SECURITY FIX: Hash the OTP before saving to database
     const hashedOtp = await bcrypt.hash(otp.toString(), 10);
 
+    // 🔥 FIX: Reset attempts to 0 when generating a new OTP
     await Otp.findOneAndUpdate(
       { email: targetEmail },
-      { email: targetEmail, otp: hashedOtp, createdAt: Date.now() },
+      { email: targetEmail, otp: hashedOtp, attempts: 0, createdAt: Date.now() },
       { upsert: true, new: true }
     );
 
-    await transporter.sendMail({
+    // 🔥 FIRE AND FORGET: Removed await
+    transporter.sendMail({
       from: `"UBA Auth" <${process.env.EMAIL_USER}>`,
       to: targetEmail,
       subject: "Password Reset Request",
       html: generateAuthEmail("OTP", otp), 
-    });
+    })
+    .then(() => console.log(`[✉️ EMAIL SUCCESS] Password reset OTP sent to ${targetEmail}`))
+    .catch((mailErr) => console.error(`[⚠️ EMAIL ERROR] Failed to send password reset OTP: ${mailErr.message}`, mailErr));
 
-    return res.status(200).json({ success: true, message: "Password reset OTP sent to email" });
+    return res.status(200).json({ success: true, message: "If that account exists, a password reset OTP has been sent to the email." });
   } catch (err) {
     console.error(`[🚨 FORGOT PASSWORD ERROR] Failed to send password reset OTP: ${err.message}`, err);
     return res.status(500).json({ success: false, message: "Failed to send OTP" });
@@ -837,9 +934,16 @@ exports.forgotPasswordVerifyOtp = async (req, res) => {
     if (!account) return res.status(404).json({ success: false, message: "Account not found" });
     const targetEmail = account.email;
 
-    const record = await Otp.findOne({ email: targetEmail }).select("otp createdAt").lean();
+    // 🔥 SECURITY FIX: Added 'attempts' to the select query
+    const record = await Otp.findOne({ email: targetEmail }).select("otp createdAt attempts").lean();
     if (!record) {
       return res.status(400).json({ success: false, message: "OTP not found or expired" });
+    }
+
+    // 🔥 SECURITY FIX: Stop OTP brute-forcing
+    if (record.attempts >= 5) {
+      await Otp.deleteOne({ email: targetEmail });
+      return res.status(429).json({ success: false, message: "Too many invalid OTP attempts. Please request a new one." });
     }
 
     if (Date.now() - record.createdAt > OTP_EXPIRY) {
@@ -850,6 +954,8 @@ exports.forgotPasswordVerifyOtp = async (req, res) => {
     // 🔥 SECURITY FIX: Compare incoming OTP with hashed OTP
     const isMatch = await bcrypt.compare(otp.toString(), record.otp);
     if (!isMatch) {
+      // 🔥 SECURITY FIX: Increment failed attempt counter
+      await Otp.updateOne({ email: targetEmail }, { $inc: { attempts: 1 } });
       return res.status(400).json({ success: false, message: "Invalid OTP" });
     }
 
@@ -870,6 +976,12 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: "Identifier, OTP, and new password are required" });
     }
 
+    // 🔥 SECURITY FIX: Enforce strong passwords on reset (Upper, Lower, Number, Special, 8-64 chars)
+    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*#?&]).{8,64}$/;
+    if (!strongPasswordRegex.test(newPassword)) {
+      return res.status(400).json({ success: false, message: "Password must be 8-64 characters and include an uppercase letter, lowercase letter, number, and special character." });
+    }
+
     const emailSearch = lookupId.includes("@") ? lookupId.toLowerCase() : lookupId;
     let account = await User.findOne({ $or: [{ email: emailSearch }, { userId: lookupId }] });
     let role = "user";
@@ -885,14 +997,29 @@ exports.resetPassword = async (req, res) => {
 
     const targetEmail = account.email;
 
-    const record = await Otp.findOne({ email: targetEmail }).select("otp").lean();
+    // 🔥 SECURITY FIX: Added 'attempts' and 'createdAt' to check for lockout/expiry
+    const record = await Otp.findOne({ email: targetEmail }).select("otp createdAt attempts").lean();
     if (!record) {
       return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    // 🔥 SECURITY FIX: Stop OTP brute-forcing
+    if (record.attempts >= 5) {
+      await Otp.deleteOne({ email: targetEmail });
+      return res.status(429).json({ success: false, message: "Too many invalid OTP attempts. Please request a new one." });
+    }
+
+    // 🔥 FIX: OTP Expiry check was missing from resetPassword
+    if (Date.now() - record.createdAt > OTP_EXPIRY) {
+      await Otp.deleteOne({ email: targetEmail });
+      return res.status(400).json({ success: false, message: "OTP has expired" });
     }
 
     // 🔥 SECURITY FIX: Compare incoming OTP with hashed OTP
     const isMatch = await bcrypt.compare(otp.toString(), record.otp);
     if (!isMatch) {
+      // 🔥 SECURITY FIX: Increment failed attempt counter
+      await Otp.updateOne({ email: targetEmail }, { $inc: { attempts: 1 } });
       return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
     }
 
@@ -919,12 +1046,15 @@ exports.resetPassword = async (req, res) => {
 
     await Otp.deleteOne({ email: targetEmail });
 
-    await transporter.sendMail({
+    // 🔥 FIRE AND FORGET: Removed await
+    transporter.sendMail({
       from: `"UBA Auth" <${process.env.EMAIL_USER}>`,
       to: targetEmail,
       subject: "Password Reset Successful",
       html: generateAuthEmail("SUCCESS"), 
-    });
+    })
+    .then(() => console.log(`[✉️ EMAIL SUCCESS] Password reset confirmation sent to ${targetEmail}`))
+    .catch((mailErr) => console.error(`[⚠️ EMAIL ERROR] Failed to send reset confirmation: ${mailErr.message}`, mailErr));
 
     return res.status(200).json({ success: true, message: "Password updated successfully" });
   } catch (err) {
@@ -961,9 +1091,10 @@ exports.changePassword = async (req, res) => {
       return res.status(400).json({ message: "New password must be different from current password" });
     } 
 
-    const strongPasswordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&]).{8,}$/;
+    // 🔥 SECURITY FIX: Enforce strong passwords on change (Upper, Lower, Number, Special, 8-64 chars)
+    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*#?&]).{8,64}$/;
     if (!strongPasswordRegex.test(newPassword)) {
-      return res.status(400).json({ message: "Password must be at least 8 characters and include a letter, number, and special character." });
+      return res.status(400).json({ message: "Password must be 8-64 characters and include an uppercase letter, lowercase letter, number, and special character." });
     }
 
     account.password = await bcrypt.hash(newPassword, 10);
@@ -1048,15 +1179,29 @@ exports.submitContactForm = async (req, res) => {
       });
     }
 
+    // 🔥 FIX: Added length limit to prevent huge payloads/spam
+    if (message.length > 2000) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Message exceeds the 2000 character limit.' 
+      });
+    }
+
+    // 🔥 SECURITY FIX: Normalize email
+    const normalizedEmail = email.trim().toLowerCase();
+
     // 🔥 INDUSTRY STANDARD: Email Validation
-    if (!validator.isEmail(email.trim())) {
+    if (!validator.isEmail(normalizedEmail)) {
       return res.status(400).json({ success: false, message: 'Invalid email format' });
     }
 
+    // 🔥 SECURITY FIX: Sanitize the contact message to prevent XSS attacks
+    const sanitizedMessage = validator.escape(message);
+
     const newContactMessage = new Contact({
-      name,
-      email,
-      message,
+      name: name.trim(),
+      email: normalizedEmail,
+      message: sanitizedMessage,
     });
 
     await newContactMessage.save();
@@ -1065,8 +1210,8 @@ exports.submitContactForm = async (req, res) => {
       from: process.env.EMAIL_USER, 
       to: process.env.EMAIL_USER,   
       subject: `New Contact Form Submission from ${name}`,
-      html: ContactEmail(name, email, message),
-      replyTo: email 
+      html: ContactEmail(name, normalizedEmail, sanitizedMessage),
+      replyTo: normalizedEmail 
     };
 
     transporter.sendMail(mailOptions).catch(err => {
