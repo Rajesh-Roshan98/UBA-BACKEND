@@ -136,22 +136,25 @@ const OTP_EXPIRY = 5 * 60 * 1000;      // 5 minutes
 const RESEND_COOLDOWN = 60 * 1000;    // 60 seconds
 
 /* ================= MAIL TRANSPORT ================= */
-/* ================= MAIL TRANSPORT ================= */
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
-  port: 587,
-  secure: false, // MUST be false for port 587
+  port: 465,
+  secure: true,
 
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
 
-  family: 4, // 🔥 Now this will actually be respected by Node.js!
-
-  tls: {
-    rejectUnauthorized: true,
-    minVersion: "TLSv1.2",
+  // 🔥 Force IPv4 DNS resolution
+  lookup: (hostname, options, callback) => {
+    require("dns").lookup(
+      hostname,
+      { family: 4 },
+      (err, address, family) => {
+        callback(err, address, family);
+      }
+    );
   },
 
   connectionTimeout: 20000,
