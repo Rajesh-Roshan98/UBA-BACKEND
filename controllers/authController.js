@@ -137,20 +137,25 @@ const RESEND_COOLDOWN = 60 * 1000;    // 60 seconds
 
 /* ================= MAIL TRANSPORT ================= */
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 465,              // Keep the faster Implicit TLS port
+  secure: true,           // Keep it encrypted from byte 1
 
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
 
-  family: 4, // 🔥 FORCE IPV4
+  family: 4, // 🔥 Still forcing IPv4 to prevent Render crashes
 
-  connectionTimeout: 10000, // 10 sec
-  greetingTimeout: 10000,
-  socketTimeout: 10000,
+  tls: {
+    rejectUnauthorized: true, // ✅ Strict certificate validation
+    minVersion: "TLSv1.2",    // ✅ Forces modern, secure encryption
+  },
 
-  // 🔥 SECURITY FIX: Removed insecure tls rejectUnauthorized: false
+  connectionTimeout: 20000, // ✅ Generous timeout for Render's network
+  greetingTimeout: 20000,
+  socketTimeout: 20000,
 });
 
 /* ================= SEND OTP ================= */
