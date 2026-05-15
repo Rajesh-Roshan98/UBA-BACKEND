@@ -1,4 +1,7 @@
 const failedLoginEmail = (alertId) => {
+  // 🔥 NEW: Dynamically pull the app name, defaulting to "System" if missing
+  const appName = process.env.APP_NAME || "System";
+
   const baseUrl = (process.env.FRONTEND_URL).replace(/\/$/, "");
   const queryParams = `?alertId=${alertId}`;
 
@@ -8,7 +11,7 @@ const failedLoginEmail = (alertId) => {
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Security Alert | Cloud-UBA</title>
+    <title>Security Alert | ${appName}</title>
     <style>
       /* Inline CSS for maximum email client compatibility */
       body {
@@ -122,7 +125,7 @@ const failedLoginEmail = (alertId) => {
     <div class="container">
 
       <div class="brand-header">
-        <div class="brand-logo">Cloud-UBA</div>
+        <div class="brand-logo">${appName}</div>
         <div class="brand-subtitle">Security Alert</div>
       </div>
 
@@ -151,9 +154,9 @@ const failedLoginEmail = (alertId) => {
       </div>
 
       <div class="footer">
-        <p>This is an automated message from the Cloud-UBA Monitoring System.</p>
+        <p>This is an automated message from the ${appName} Monitoring System.</p>
         <p>If you did not request this notification, you can safely ignore this email after reviewing the activity.</p>
-        <p>&copy; ${new Date().getFullYear()} Cloud-UBA. All rights reserved.</p>
+        <p>&copy; ${new Date().getFullYear()} ${appName}. All rights reserved.</p>
       </div>
 
     </div>

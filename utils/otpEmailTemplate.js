@@ -1,5 +1,7 @@
 const generateOtpEmail = (otpValue) => {
   const currentYear = new Date().getFullYear();
+  // 🔥 NEW: Dynamically pull the app name, defaulting to "System" if missing
+  const appName = process.env.APP_NAME || "System";
   
   return `
   <!DOCTYPE html>
@@ -7,7 +9,7 @@ const generateOtpEmail = (otpValue) => {
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verify Your Account | Cloud-UBA</title>
+    <title>Verify Your Account | ${appName}</title>
     <style>
       /* Inline CSS for maximum email client compatibility */
       body {
@@ -110,7 +112,7 @@ const generateOtpEmail = (otpValue) => {
     <div class="container">
 
       <div class="brand-header">
-        <div class="brand-logo">Cloud-UBA</div>
+        <div class="brand-logo">${appName}</div>
         <div class="brand-subtitle">Identity Verification</div>
       </div>
 
@@ -139,8 +141,8 @@ const generateOtpEmail = (otpValue) => {
       </div>
 
       <div class="footer">
-        <p>This is an automated message from the Cloud-UBA Security System.</p>
-        <p>&copy; ${currentYear} Cloud-UBA. All rights reserved.</p>
+        <p>This is an automated message from the ${appName} Security System.</p>
+        <p>&copy; ${currentYear} ${appName}. All rights reserved.</p>
       </div>
 
     </div>

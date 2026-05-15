@@ -15,7 +15,6 @@ const Notification = require("../models/Notification");
 
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const dns = require("dns");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto"); 
 const generateOtpEmail = require("../utils/otpEmailTemplate");
@@ -137,30 +136,15 @@ const OTP_EXPIRY = 5 * 60 * 1000;      // 5 minutes
 const RESEND_COOLDOWN = 60 * 1000;    // 60 seconds
 
 /* ================= MAIL TRANSPORT ================= */
+// 🔥 UPGRADED: Scalable Brevo SMTP Configuration
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-
-  // 🔥 Use STARTTLS instead of implicit TLS
-  // Render works more reliably with 587
+  host: "smtp-relay.brevo.com",
   port: 587,
-  secure: false,
-
+  secure: false, // true for 465, false for other ports
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    user: process.env.EMAIL_USER, 
+    pass: process.env.EMAIL_PASS, 
   },
-
-  // 🔥 FORCE IPV4 DNS RESOLUTION
-  lookup: (hostname, options, callback) => {
-    dns.lookup(hostname, { family: 4 }, callback);
-  },
-
-  // 🔥 STARTTLS SECURITY
-  requireTLS: true,
-
-  connectionTimeout: 30000,
-  greetingTimeout: 30000,
-  socketTimeout: 30000,
 });
 
 /* ================= SEND OTP ================= */
@@ -220,11 +204,11 @@ exports.sendOtp = async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // 🔥 FIRE AND FORGET: Removed await
+    // 🔥 FIRE AND FORGET: Removed await & Updated with Dynamic Env Variables
     transporter.sendMail({
-      from: `"UBA Auth" <${process.env.EMAIL_USER}>`,
+      from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
       to: normalizedEmail,
-      subject: "Verify Your Email",
+      subject: `Verify Your ${process.env.APP_NAME} Account`,
       html: generateOtpEmail(otp), // Send the unhashed OTP to the user's email
     })
     .then(() => console.log(`[✉️ EMAIL SUCCESS] Verification OTP sent to ${normalizedEmail}`))
@@ -544,11 +528,11 @@ exports.loginUser = async (req, res) => {
           });
 
           if (failedAttemptsCount > 0 && failedAttemptsCount % 3 === 0) {
-            // 🔥 FIRE AND FORGET: Removed await & try/catch
+            // 🔥 FIRE AND FORGET: Removed await & Updated with Dynamic Env Variables
             transporter.sendMail({
-              from: `"UBA Security" <${process.env.EMAIL_USER}>`,
+              from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
               to: admin.email,
-              subject: "⚠️ Security Alert: Multiple Failed Login Attempts",
+              subject: `⚠️ Security Alert: Multiple Failed Login Attempts on ${process.env.APP_NAME}`,
               html: failedLoginEmail(failedLog?._id || "Unknown"), 
             })
             .then(() => console.log(`[✉️ EMAIL SUCCESS] Admin security alert sent to ${admin.email}`))
@@ -685,11 +669,11 @@ exports.loginUser = async (req, res) => {
       });
 
       if (failedAttemptsCount > 0 && failedAttemptsCount % 3 === 0) {
-        // 🔥 FIRE AND FORGET: Removed await & try/catch
+        // 🔥 FIRE AND FORGET: Removed await & Updated with Dynamic Env Variables
         transporter.sendMail({
-          from: `"UBA Security" <${process.env.EMAIL_USER}>`,
+          from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
           to: user.email,
-          subject: "⚠️ Security Alert: Multiple Failed Login Attempts",
+          subject: `⚠️ Security Alert: Multiple Failed Login Attempts on ${process.env.APP_NAME}`,
           html: failedLoginEmail(failedLog._id), 
         })
         .then(() => console.log(`[✉️ EMAIL SUCCESS] Security alert email sent to ${user.email} for 3 failed attempts.`))
@@ -910,11 +894,11 @@ exports.forgotPasswordSendOtp = async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // 🔥 FIRE AND FORGET: Removed await
+    // 🔥 FIRE AND FORGET: Removed await & Updated with Dynamic Env Variables
     transporter.sendMail({
-      from: `"UBA Auth" <${process.env.EMAIL_USER}>`,
+      from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
       to: targetEmail,
-      subject: "Password Reset Request",
+      subject: `Password Reset Request - ${process.env.APP_NAME}`,
       html: generateAuthEmail("OTP", otp), 
     })
     .then(() => console.log(`[✉️ EMAIL SUCCESS] Password reset OTP sent to ${targetEmail}`))
@@ -1056,11 +1040,11 @@ exports.resetPassword = async (req, res) => {
 
     await Otp.deleteOne({ email: targetEmail });
 
-    // 🔥 FIRE AND FORGET: Removed await
+    // 🔥 FIRE AND FORGET: Removed await & Updated with Dynamic Env Variables
     transporter.sendMail({
-      from: `"UBA Auth" <${process.env.EMAIL_USER}>`,
+      from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
       to: targetEmail,
-      subject: "Password Reset Successful",
+      subject: `Password Reset Successful - ${process.env.APP_NAME}`,
       html: generateAuthEmail("SUCCESS"), 
     })
     .then(() => console.log(`[✉️ EMAIL SUCCESS] Password reset confirmation sent to ${targetEmail}`))
@@ -1216,12 +1200,13 @@ exports.submitContactForm = async (req, res) => {
 
     await newContactMessage.save();
 
+    // 🔥 UPGRADED: Dynamic Env Variables for Contact Submission Routing
     const mailOptions = {
-      from: process.env.EMAIL_USER, 
-      to: process.env.EMAIL_USER,   
-      subject: `New Contact Form Submission from ${name}`,
+      from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`, 
+      to: process.env.EMAIL_FROM, // Sends notification to YOUR verified email   
+      subject: `New Contact Form Submission from ${name} - ${process.env.APP_NAME}`,
       html: ContactEmail(name, normalizedEmail, sanitizedMessage),
-      replyTo: normalizedEmail 
+      replyTo: normalizedEmail // So hitting "reply" goes to the user, not yourself
     };
 
     transporter.sendMail(mailOptions).catch(err => {

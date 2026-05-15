@@ -1,4 +1,7 @@
 const generateAuthEmail = (type, otp = null) => {
+  // 🔥 NEW: Dynamically pull the app name, defaulting to "System" if missing
+  const appName = process.env.APP_NAME || "System";
+
   // Define dynamic properties based on the email type
   const isOtp = type === "OTP";
   const headerBgColor = isOtp ? "#4f46e5" : "#10b981"; // Indigo for OTP, Green for Success
@@ -11,7 +14,7 @@ const generateAuthEmail = (type, otp = null) => {
       <p style="margin: 0 0 24px; font-size: 15px; color: #475569; line-height: 1.6;">
         We received a request to reset the password for your account. Please use the verification code below to complete the process:
       </p>
-       
+        
       <div style="text-align: center; margin: 32px 0; padding: 24px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
         <p style="font-family: 'Courier New', Courier, monospace; font-size: 38px; font-weight: 700; color: #4f46e5; letter-spacing: 12px; margin: 0; padding-left: 12px;">${otp}</p>
       </div>
@@ -59,7 +62,7 @@ const generateAuthEmail = (type, otp = null) => {
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>${title} | Cloud-UBA</title>
+      <title>${title} | ${appName}</title>
       <style>
         /* Inline CSS for maximum email client compatibility */
         body { 
@@ -132,7 +135,7 @@ const generateAuthEmail = (type, otp = null) => {
     <body>
       <div class="container">
         <div class="brand-header">
-          <div class="brand-logo">Cloud-UBA</div>
+          <div class="brand-logo">${appName}</div>
           <div class="brand-subtitle">Account Management</div>
         </div>
         
@@ -144,8 +147,8 @@ const generateAuthEmail = (type, otp = null) => {
         </div>
         
         <div class="footer">
-          <p>This is an automated message from the Cloud-UBA System.</p>
-          <p>&copy; ${new Date().getFullYear()} Cloud-UBA. All rights reserved.</p>
+          <p>This is an automated message from the ${appName} System.</p>
+          <p>&copy; ${new Date().getFullYear()} ${appName}. All rights reserved.</p>
         </div>
       </div>
     </body>
