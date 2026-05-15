@@ -15,6 +15,7 @@ const Notification = require("../models/Notification");
 
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const dns = require("dns");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto"); 
 const generateOtpEmail = require("../utils/otpEmailTemplate");
@@ -138,28 +139,28 @@ const RESEND_COOLDOWN = 60 * 1000;    // 60 seconds
 /* ================= MAIL TRANSPORT ================= */
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
+
+  // 🔥 Use STARTTLS instead of implicit TLS
+  // Render works more reliably with 587
+  port: 587,
+  secure: false,
 
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
 
-  // 🔥 Force IPv4 DNS resolution
+  // 🔥 FORCE IPV4 DNS RESOLUTION
   lookup: (hostname, options, callback) => {
-    require("dns").lookup(
-      hostname,
-      { family: 4 },
-      (err, address, family) => {
-        callback(err, address, family);
-      }
-    );
+    dns.lookup(hostname, { family: 4 }, callback);
   },
 
-  connectionTimeout: 20000,
-  greetingTimeout: 20000,
-  socketTimeout: 20000,
+  // 🔥 STARTTLS SECURITY
+  requireTLS: true,
+
+  connectionTimeout: 30000,
+  greetingTimeout: 30000,
+  socketTimeout: 30000,
 });
 
 /* ================= SEND OTP ================= */
