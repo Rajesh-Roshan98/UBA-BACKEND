@@ -138,13 +138,24 @@ const RESEND_COOLDOWN = 60 * 1000;    // 60 seconds
 /* ================= MAIL TRANSPORT ================= */
 // 🔥 UPGRADED: Scalable Brevo SMTP Configuration
 const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
-  secure: false, // true for 465, false for other ports
+  host: process.env.EMAIL_HOST,
+  
+  // 🔥 Excellent: Fallback to 2525 for cloud firewalls
+  port: Number(process.env.EMAIL_PORT) || 2525,
+  secure: false, // Must be false for port 587 or 2525
+
   auth: {
-    user: process.env.EMAIL_USER, 
-    pass: process.env.EMAIL_PASS, 
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
+
+  // 🔥 Brilliant: Forces IPv4. Solves Render DNS resolution timeouts.
+  family: 4,
+
+  // 🔥 Cloud Stability: Prevents premature drop-offs during network lag
+  connectionTimeout: 60000,
+  greetingTimeout: 60000,
+  socketTimeout: 60000,
 });
 
 /* ================= SEND OTP ================= */
