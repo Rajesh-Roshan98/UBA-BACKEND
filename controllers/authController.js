@@ -136,27 +136,96 @@ const OTP_EXPIRY = 5 * 60 * 1000;      // 5 minutes
 const RESEND_COOLDOWN = 60 * 1000;    // 60 seconds
 
 /* ================= MAIL TRANSPORT ================= */
-// 🔥 UPGRADED: Scalable Brevo SMTP Configuration
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  
-  // 🔥 Excellent: Fallback to 2525 for cloud firewalls
-  port: Number(process.env.EMAIL_PORT) || 2525,
-  secure: false, // Must be false for port 587 or 2525
+// 🔥 THE ULTIMATE FIX: Drop-in replacement for Nodemailer to bypass Render's SMTP block!
+// This uses native fetch to hit Brevo's API directly over HTTPS (Port 443), which Render CANNOT block.
+const transporter = {
+  sendMail: async (mailOptions) => {
+    // 🔥 Validate required env variables
+    if (!process.env.EMAIL_PASS) {
+      throw new Error("EMAIL_PASS is missing");
+    }
 
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    if (!process.env.EMAIL_FROM) {
+      throw new Error("EMAIL_FROM is missing");
+    }
+
+    // 🔥 Map Nodemailer-style payload → Brevo API payload
+    const payload = {
+      sender: {
+        name: process.env.EMAIL_FROM_NAME || "System",
+        email: process.env.EMAIL_FROM,
+      },
+
+      to: [{ email: mailOptions.to }],
+
+      subject: mailOptions.subject,
+
+      htmlContent: mailOptions.html,
+    };
+
+    // 🔥 Optional reply-to support
+    if (mailOptions.replyTo) {
+      payload.replyTo = {
+        email: mailOptions.replyTo,
+      };
+    }
+
+    // 🔥 Prevent hanging requests
+    const controller = new AbortController();
+
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, 30000);
+
+    try {
+      const response = await fetch(
+        "https://api.brevo.com/v3/smtp/email",
+        {
+          method: "POST",
+
+          headers: {
+            accept: "application/json",
+            "api-key": process.env.EMAIL_PASS,
+            "content-type": "application/json",
+          },
+
+          body: JSON.stringify(payload),
+
+          signal: controller.signal,
+        }
+      );
+
+      clearTimeout(timeout);
+
+      // 🔥 Better Brevo error handling
+      if (!response.ok) {
+        let errorData;
+
+        try {
+          errorData = await response.json();
+        } catch {
+          errorData = await response.text();
+        }
+
+        throw new Error(
+          `Brevo API Error (${response.status}): ${JSON.stringify(errorData)}`
+        );
+      }
+
+      return await response.json();
+
+    } catch (error) {
+      clearTimeout(timeout);
+
+      // 🔥 Better timeout error message
+      if (error.name === "AbortError") {
+        throw new Error("Brevo API request timed out after 30 seconds");
+      }
+
+      throw error;
+    }
   },
-
-  // 🔥 Brilliant: Forces IPv4. Solves Render DNS resolution timeouts.
-  family: 4,
-
-  // 🔥 Cloud Stability: Prevents premature drop-offs during network lag
-  connectionTimeout: 60000,
-  greetingTimeout: 60000,
-  socketTimeout: 60000,
-});
+};
 
 /* ================= SEND OTP ================= */
 exports.sendOtp = async (req, res) => {
